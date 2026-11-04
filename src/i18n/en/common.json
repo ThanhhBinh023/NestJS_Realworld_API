@@ -1,0 +1,7 @@
+{
+  "success": "Success",
+  "notFound": "Resource not found",
+  "badRequest": "Invalid request parameters",
+  "unauthorized": "Unauthorized access",
+  "forbidden": "Forbidden"
+}

@@ -1,0 +1,7 @@
+{
+  "success": "Thành công",
+  "notFound": "Không tìm thấy tài nguyên",
+  "badRequest": "Tham số yêu cầu không hợp lệ",
+  "unauthorized": "Truy cập không được phép",
+  "forbidden": "Bị cấm truy cập"
+}
