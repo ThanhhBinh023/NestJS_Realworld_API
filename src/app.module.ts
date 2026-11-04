@@ -21,13 +21,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 function getI18nPath(): string {
-  const distPath = path.join(__dirname, 'i18n');
-  if (fs.existsSync(distPath)) {
-    return distPath;
-  }
   const rootSrcPath = path.join(process.cwd(), 'src', 'i18n');
   if (fs.existsSync(rootSrcPath)) {
     return rootSrcPath;
+  }
+  const distPath = path.join(__dirname, 'i18n');
+  if (fs.existsSync(distPath)) {
+    return distPath;
   }
   return path.join(process.cwd(), 'i18n');
 }
