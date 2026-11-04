@@ -10,7 +10,7 @@ import {
 
 export class RegisterUserDataDto {
   @ApiProperty({
-    example: 'Jacob',
+    example: 'Binh',
     description: 'Unique username for the account',
   })
   @IsNotEmpty({ message: 'username should not be empty' })
@@ -18,7 +18,7 @@ export class RegisterUserDataDto {
   username!: string;
 
   @ApiProperty({
-    example: 'jake@jake.jake',
+    example: 'binh@binh.binh',
     description: 'Unique user email address',
   })
   @IsNotEmpty({ message: 'email should not be empty' })
@@ -26,7 +26,7 @@ export class RegisterUserDataDto {
   email!: string;
 
   @ApiProperty({
-    example: 'jakejakejake',
+    example: 'binhbinhbinh',
     description: 'User password (minimum 6 characters)',
   })
   @IsNotEmpty({ message: 'password should not be empty' })

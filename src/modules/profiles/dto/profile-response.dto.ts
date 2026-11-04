@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class ProfileDto {
   @ApiProperty({
-    example: 'jake',
+    example: 'binh',
     description: 'Username of the profile owner',
   })
   username!: string;

@@ -11,7 +11,7 @@ import {
 
 export class UpdateUserDataDto {
   @ApiPropertyOptional({
-    example: 'jake@jake.jake',
+    example: 'binh@binh.binh',
     description: 'Updated email address',
   })
   @IsOptional()
@@ -19,7 +19,7 @@ export class UpdateUserDataDto {
   email?: string;
 
   @ApiPropertyOptional({
-    example: 'jake_updated',
+    example: 'binh_updated',
     description: 'Updated username',
   })
   @IsOptional()
