@@ -11,8 +11,10 @@ import {
   QueryResolver,
 } from 'nestjs-i18n';
 import { User } from './modules/users/entities/user.entity.js';
+import { Follow } from './modules/profiles/entities/follow.entity.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { ProfilesModule } from './modules/profiles/profiles.module.js';
 import { HelloModule } from './modules/hello/hello.module.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -46,7 +48,7 @@ function getI18nPath(): string {
         username: configService.get<string>('DB_USERNAME', 'root'),
         password: configService.get<string>('DB_PASSWORD', '123456'),
         database: configService.get<string>('DB_NAME', 'realworld_nest'),
-        entities: [User],
+        entities: [User, Follow],
         synchronize: false,
         logging: false,
       }),
@@ -65,6 +67,7 @@ function getI18nPath(): string {
     }),
     UsersModule,
     AuthModule,
+    ProfilesModule,
     HelloModule,
   ],
 })
