@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -11,6 +12,9 @@ async function bootstrap(): Promise<void> {
 
   // Enable CORS
   app.enableCors();
+
+  // Register Global Exception Filter (RealWorld error format: { errors: { ... } })
+  app.useGlobalFilters(new HttpExceptionFilter());
 
   // Enable validation pipe
   app.useGlobalPipes(
