@@ -2,13 +2,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   AcceptLanguageResolver,
   HeaderResolver,
   I18nModule,
   QueryResolver,
 } from 'nestjs-i18n';
+import { User } from './modules/users/entities/user.entity.js';
+import { UsersModule } from './modules/users/users.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
 import { HelloModule } from './modules/hello/hello.module.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -32,6 +36,21 @@ function getI18nPath(): string {
       isGlobal: true,
       envFilePath: '.env',
     }),
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        type: 'mysql',
+        host: configService.get<string>('DB_HOST', 'localhost'),
+        port: parseInt(configService.get<string>('DB_PORT', '3306'), 10),
+        username: configService.get<string>('DB_USERNAME', 'root'),
+        password: configService.get<string>('DB_PASSWORD', '123456'),
+        database: configService.get<string>('DB_NAME', 'realworld_nest'),
+        entities: [User],
+        synchronize: false,
+        logging: false,
+      }),
+    }),
     I18nModule.forRoot({
       fallbackLanguage: 'en',
       loaderOptions: {
@@ -44,6 +63,8 @@ function getI18nPath(): string {
         new HeaderResolver(['x-custom-lang']),
       ],
     }),
+    UsersModule,
+    AuthModule,
     HelloModule,
   ],
 })
