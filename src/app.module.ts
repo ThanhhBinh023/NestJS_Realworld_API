@@ -12,9 +12,13 @@ import {
 } from 'nestjs-i18n';
 import { User } from './modules/users/entities/user.entity.js';
 import { Follow } from './modules/profiles/entities/follow.entity.js';
+import { Article } from './modules/articles/entities/article.entity.js';
+import { Tag } from './modules/tags/entities/tag.entity.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { ProfilesModule } from './modules/profiles/profiles.module.js';
+import { ArticlesModule } from './modules/articles/articles.module.js';
+import { TagsModule } from './modules/tags/tags.module.js';
 import { HelloModule } from './modules/hello/hello.module.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -48,7 +52,7 @@ function getI18nPath(): string {
         username: configService.get<string>('DB_USERNAME', 'root'),
         password: configService.get<string>('DB_PASSWORD', '123456'),
         database: configService.get<string>('DB_NAME', 'realworld_nest'),
-        entities: [User, Follow],
+        entities: [User, Follow, Article, Tag],
         synchronize: false,
         logging: false,
       }),
@@ -68,6 +72,8 @@ function getI18nPath(): string {
     UsersModule,
     AuthModule,
     ProfilesModule,
+    TagsModule,
+    ArticlesModule,
     HelloModule,
   ],
 })
