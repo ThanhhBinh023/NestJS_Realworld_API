@@ -103,6 +103,85 @@ describe('Articles & Tags CRUD (e2e)', () => {
     expect(res.body.article.author.following).toBe(false);
   });
 
+  it('GET /api/articles - List articles with pagination and author info', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/articles?limit=10&offset=0')
+      .expect(200);
+
+    expect(res.body).toHaveProperty('articles');
+    expect(res.body).toHaveProperty('articlesCount');
+    expect(Array.isArray(res.body.articles)).toBe(true);
+    expect(res.body.articlesCount).toBeGreaterThanOrEqual(1);
+
+    const found = res.body.articles.find(
+      (a: { slug: string }) => a.slug === createdSlug,
+    );
+    expect(found).toBeDefined();
+    expect(found.title).toBe(`How to Train Dragons ${now}`);
+  });
+
+  it('GET /api/articles - Filter articles by tag', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/articles?tag=dragons')
+      .expect(200);
+
+    expect(res.body.articlesCount).toBeGreaterThanOrEqual(1);
+    const hasDragon = res.body.articles.some((a: { tagList: string[] }) =>
+      a.tagList.includes('dragons'),
+    );
+    expect(hasDragon).toBe(true);
+
+    const resEmpty = await request(app.getHttpServer())
+      .get(`/api/articles?tag=nonexistent_tag_${now}`)
+      .expect(200);
+    expect(resEmpty.body.articlesCount).toBe(0);
+    expect(resEmpty.body.articles).toEqual([]);
+  });
+
+  it('GET /api/articles - Filter articles by author', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/articles?author=${authorUser.username}`)
+      .expect(200);
+
+    expect(res.body.articlesCount).toBe(1);
+    expect(res.body.articles[0].slug).toBe(createdSlug);
+    expect(res.body.articles[0].author.username).toBe(authorUser.username);
+  });
+
+  it('GET /api/articles/feed - Unauthorized without auth token (401)', async () => {
+    await request(app.getHttpServer()).get('/api/articles/feed').expect(401);
+  });
+
+  it('GET /api/articles/feed - Empty feed when following nobody', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/articles/feed')
+      .set('Authorization', `Token ${otherToken}`)
+      .expect(200);
+
+    expect(res.body.articles).toEqual([]);
+    expect(res.body.articlesCount).toBe(0);
+  });
+
+  it('GET /api/articles/feed - Return articles after following author', async () => {
+    // otherUser follows authorUser
+    await request(app.getHttpServer())
+      .post(`/api/profiles/${authorUser.username}/follow`)
+      .set('Authorization', `Token ${otherToken}`)
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/articles/feed')
+      .set('Authorization', `Token ${otherToken}`)
+      .expect(200);
+
+    expect(res.body.articlesCount).toBeGreaterThanOrEqual(1);
+    const feedItem = res.body.articles.find(
+      (a: { slug: string }) => a.slug === createdSlug,
+    );
+    expect(feedItem).toBeDefined();
+    expect(feedItem.author.following).toBe(true);
+  });
+
   it('PUT /api/articles/:slug - Non-author fails to update (403)', async () => {
     await request(app.getHttpServer())
       .put(`/api/articles/${createdSlug}`)

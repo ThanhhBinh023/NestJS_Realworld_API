@@ -27,10 +27,12 @@ describe('ArticlesService', () => {
         updatedAt: new Date(),
       })),
       remove: vi.fn(),
+      createQueryBuilder: vi.fn(),
     };
 
     mockFollowRepository = {
       findOne: vi.fn(),
+      find: vi.fn(),
     };
 
     mockTagsService = {
@@ -69,6 +71,174 @@ describe('ArticlesService', () => {
       expect(result.article.author.username).toBe('binh');
       expect(result.article.favoritesCount).toBe(0);
       expect(result.article.favorited).toBe(false);
+    });
+  });
+
+  describe('findAll', () => {
+    it('should return articles and total count with default pagination', async () => {
+      const mockArticles = [
+        {
+          id: 1,
+          slug: 'art-1',
+          title: 'Art 1',
+          description: 'Desc 1',
+          body: 'Body 1',
+          favoritesCount: 0,
+          author: mockAuthor,
+          tags: [{ name: 'tech' }],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      const qb: any = {
+        leftJoinAndSelect: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockReturnThis(),
+        take: vi.fn().mockReturnThis(),
+        skip: vi.fn().mockReturnThis(),
+        andWhere: vi.fn().mockReturnThis(),
+        getManyAndCount: vi.fn().mockResolvedValueOnce([mockArticles, 1]),
+      };
+
+      mockArticleRepository.createQueryBuilder.mockReturnValue(qb);
+      mockFollowRepository.find.mockResolvedValueOnce([]);
+
+      const result = await articlesService.findAll({}, undefined);
+
+      expect(result.articlesCount).toBe(1);
+      expect(result.articles[0].slug).toBe('art-1');
+      expect(result.articles[0].tagList).toEqual(['tech']);
+      expect(qb.take).toHaveBeenCalledWith(20);
+      expect(qb.skip).toHaveBeenCalledWith(0);
+    });
+
+    it('should apply filters for tag and author when provided', async () => {
+      const qb: any = {
+        leftJoinAndSelect: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockReturnThis(),
+        take: vi.fn().mockReturnThis(),
+        skip: vi.fn().mockReturnThis(),
+        andWhere: vi.fn().mockReturnThis(),
+        getManyAndCount: vi.fn().mockResolvedValueOnce([[], 0]),
+      };
+
+      mockArticleRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await articlesService.findAll(
+        { tag: 'react', author: 'binh', limit: 5, offset: 10 },
+        undefined,
+      );
+
+      expect(result.articles).toEqual([]);
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'article.id IN (SELECT at.articleId FROM articles_tags at JOIN tags t ON t.id = at.tagId WHERE t.name = :tag)',
+        { tag: 'react' },
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith('author.username = :author', {
+        author: 'binh',
+      });
+      expect(qb.take).toHaveBeenCalledWith(5);
+      expect(qb.skip).toHaveBeenCalledWith(10);
+    });
+
+    it('should return empty list when favorited filter is used (until PR 06)', async () => {
+      const result = await articlesService.findAll({ favorited: 'binh' });
+
+      expect(result.articles).toEqual([]);
+      expect(result.articlesCount).toBe(0);
+      expect(mockArticleRepository.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('should mark following true if current user follows article author', async () => {
+      const mockArticles = [
+        {
+          id: 1,
+          slug: 'art-1',
+          title: 'Art 1',
+          description: 'Desc 1',
+          body: 'Body 1',
+          favoritesCount: 0,
+          author: mockAuthor,
+          tags: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      const qb: any = {
+        leftJoinAndSelect: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockReturnThis(),
+        take: vi.fn().mockReturnThis(),
+        skip: vi.fn().mockReturnThis(),
+        andWhere: vi.fn().mockReturnThis(),
+        getManyAndCount: vi.fn().mockResolvedValueOnce([mockArticles, 1]),
+      };
+
+      mockArticleRepository.createQueryBuilder.mockReturnValue(qb);
+      mockFollowRepository.find.mockResolvedValueOnce([
+        { followerId: 2, followingId: 1 },
+      ]);
+
+      const result = await articlesService.findAll({}, 2);
+
+      expect(result.articles[0].author.following).toBe(true);
+    });
+  });
+
+  describe('findFeed', () => {
+    it('should return empty list when user follows no one', async () => {
+      mockFollowRepository.find.mockResolvedValueOnce([]);
+
+      const result = await articlesService.findFeed({}, 1);
+
+      expect(result.articles).toEqual([]);
+      expect(result.articlesCount).toBe(0);
+      expect(mockArticleRepository.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('should return feed articles of followed users', async () => {
+      mockFollowRepository.find.mockResolvedValueOnce([
+        { followerId: 2, followingId: 1 },
+      ]);
+
+      const mockArticles = [
+        {
+          id: 1,
+          slug: 'followed-article',
+          title: 'Followed Article',
+          description: 'Desc',
+          body: 'Content',
+          favoritesCount: 0,
+          author: mockAuthor,
+          tags: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      const qb: any = {
+        leftJoinAndSelect: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockReturnThis(),
+        take: vi.fn().mockReturnThis(),
+        skip: vi.fn().mockReturnThis(),
+        getManyAndCount: vi.fn().mockResolvedValueOnce([mockArticles, 1]),
+      };
+
+      mockArticleRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await articlesService.findFeed(
+        { limit: 10, offset: 0 },
+        2,
+      );
+
+      expect(result.articlesCount).toBe(1);
+      expect(result.articles[0].slug).toBe('followed-article');
+      expect(result.articles[0].author.following).toBe(true);
+      expect(qb.where).toHaveBeenCalledWith(
+        'article.authorId IN (:...followingIds)',
+        { followingIds: [1] },
+      );
     });
   });
 

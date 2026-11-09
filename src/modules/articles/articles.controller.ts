@@ -8,6 +8,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -25,6 +26,9 @@ import { ArticlesService } from './articles.service.js';
 import { CreateArticleDto } from './dto/create-article.dto.js';
 import { UpdateArticleDto } from './dto/update-article.dto.js';
 import { ArticleResponseDto } from './dto/article-response.dto.js';
+import { ArticlesQueryDto } from './dto/articles-query.dto.js';
+import { ArticlesFeedQueryDto } from './dto/articles-feed-query.dto.js';
+import { ArticlesListResponseDto } from './dto/articles-list-response.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
@@ -34,6 +38,47 @@ import { User } from '../users/entities/user.entity.js';
 @Controller('articles')
 export class ArticlesController {
   constructor(private readonly articlesService: ArticlesService) {}
+
+  @Get()
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Get most recent articles globally',
+    description:
+      'Filter by tag, author or favorited. Supports pagination via limit and offset.',
+  })
+  @ApiOkResponse({
+    description: 'List of articles with total count',
+    type: ArticlesListResponseDto,
+  })
+  async findAll(
+    @Query() query: ArticlesQueryDto,
+    @CurrentUser('id') currentUserId?: number,
+  ): Promise<ArticlesListResponseDto> {
+    return this.articlesService.findAll(query, currentUserId);
+  }
+
+  @Get('feed')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Get most recent articles from users you follow',
+    description:
+      'Returns feed of articles created by followed authors, ordered by most recent.',
+  })
+  @ApiOkResponse({
+    description: 'Feed of articles with total count',
+    type: ArticlesListResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Missing or invalid authentication token',
+  })
+  async getFeed(
+    @Query() query: ArticlesFeedQueryDto,
+    @CurrentUser('id') currentUserId: number,
+  ): Promise<ArticlesListResponseDto> {
+    return this.articlesService.findFeed(query, currentUserId);
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard)

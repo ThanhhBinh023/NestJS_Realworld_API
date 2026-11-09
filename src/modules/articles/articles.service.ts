@@ -12,6 +12,9 @@ import { TagsService } from '../tags/tags.service.js';
 import { CreateArticleDto } from './dto/create-article.dto.js';
 import { UpdateArticleDto } from './dto/update-article.dto.js';
 import { ArticleResponseDto } from './dto/article-response.dto.js';
+import { ArticlesQueryDto } from './dto/articles-query.dto.js';
+import { ArticlesFeedQueryDto } from './dto/articles-feed-query.dto.js';
+import { ArticlesListResponseDto } from './dto/articles-list-response.dto.js';
 import { createBaseSlug } from '../../common/utils/slugify.util.js';
 
 @Injectable()
@@ -45,6 +48,92 @@ export class ArticlesService {
 
     const savedArticle = await this.articleRepository.save(article);
     return this.buildArticleResponse(savedArticle, false, false);
+  }
+
+  async findAll(
+    query: ArticlesQueryDto,
+    currentUserId?: number,
+  ): Promise<ArticlesListResponseDto> {
+    const { tag, author, favorited, limit = 20, offset = 0 } = query;
+
+    if (favorited) {
+      return {
+        articles: [],
+        articlesCount: 0,
+      };
+    }
+
+    const qb = this.articleRepository
+      .createQueryBuilder('article')
+      .leftJoinAndSelect('article.author', 'author')
+      .leftJoinAndSelect('article.tags', 'tag')
+      .orderBy('article.createdAt', 'DESC')
+      .take(limit)
+      .skip(offset);
+
+    if (tag) {
+      qb.andWhere(
+        'article.id IN (SELECT at.articleId FROM articles_tags at JOIN tags t ON t.id = at.tagId WHERE t.name = :tag)',
+        { tag },
+      );
+    }
+
+    if (author) {
+      qb.andWhere('author.username = :author', { author });
+    }
+
+    const [articles, articlesCount] = await qb.getManyAndCount();
+
+    const followedAuthorIds = await this.getFollowedAuthorIds(currentUserId);
+
+    return {
+      articles: articles.map(
+        (article) =>
+          this.buildArticleResponse(
+            article,
+            followedAuthorIds.has(article.author.id),
+            false,
+          ).article,
+      ),
+      articlesCount,
+    };
+  }
+
+  async findFeed(
+    query: ArticlesFeedQueryDto,
+    currentUserId: number,
+  ): Promise<ArticlesListResponseDto> {
+    const { limit = 20, offset = 0 } = query;
+
+    const follows = await this.followRepository.find({
+      where: { followerId: currentUserId },
+    });
+
+    if (!follows || follows.length === 0) {
+      return {
+        articles: [],
+        articlesCount: 0,
+      };
+    }
+
+    const followingIds = follows.map((f) => f.followingId);
+
+    const [articles, articlesCount] = await this.articleRepository
+      .createQueryBuilder('article')
+      .leftJoinAndSelect('article.author', 'author')
+      .leftJoinAndSelect('article.tags', 'tag')
+      .where('article.authorId IN (:...followingIds)', { followingIds })
+      .orderBy('article.createdAt', 'DESC')
+      .take(limit)
+      .skip(offset)
+      .getManyAndCount();
+
+    return {
+      articles: articles.map(
+        (article) => this.buildArticleResponse(article, true, false).article,
+      ),
+      articlesCount,
+    };
   }
 
   async findBySlug(
@@ -154,6 +243,18 @@ export class ArticlesService {
     }
 
     return candidateSlug;
+  }
+
+  private async getFollowedAuthorIds(
+    currentUserId?: number,
+  ): Promise<Set<number>> {
+    if (!currentUserId) {
+      return new Set();
+    }
+    const userFollows = await this.followRepository.find({
+      where: { followerId: currentUserId },
+    });
+    return new Set(userFollows.map((f) => f.followingId));
   }
 
   private async checkIsFollowing(
