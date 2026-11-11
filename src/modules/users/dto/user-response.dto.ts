@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UserDataDto {
-  @ApiProperty({ example: 'jake@jake.jake', description: 'User email address' })
+  @ApiProperty({ example: 'binh@binh.binh', description: 'User email address' })
   email!: string;
 
   @ApiProperty({
@@ -10,7 +10,7 @@ export class UserDataDto {
   })
   token!: string;
 
-  @ApiProperty({ example: 'Jacob', description: 'Username' })
+  @ApiProperty({ example: 'Binh', description: 'Username' })
   username!: string;
 
   @ApiProperty({

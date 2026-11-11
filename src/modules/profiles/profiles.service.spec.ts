@@ -36,21 +36,21 @@ describe('ProfilesService', () => {
     it('should return profile with following false when visitor is unauthenticated', async () => {
       mockUserRepository.findOne.mockResolvedValueOnce({
         id: 2,
-        username: 'jake',
+        username: 'binh',
         bio: 'skateboarder',
         image: 'avatar.jpg',
       });
 
-      const res = await profilesService.getProfile('jake');
+      const res = await profilesService.getProfile('binh');
 
-      expect(res.profile.username).toBe('jake');
+      expect(res.profile.username).toBe('binh');
       expect(res.profile.following).toBe(false);
     });
 
     it('should return profile with following true when current user follows target', async () => {
       mockUserRepository.findOne.mockResolvedValueOnce({
         id: 2,
-        username: 'jake',
+        username: 'binh',
         bio: 'skateboarder',
         image: 'avatar.jpg',
       });
@@ -59,9 +59,9 @@ describe('ProfilesService', () => {
         followingId: 2,
       });
 
-      const res = await profilesService.getProfile('jake', 1);
+      const res = await profilesService.getProfile('binh', 1);
 
-      expect(res.profile.username).toBe('jake');
+      expect(res.profile.username).toBe('binh');
       expect(res.profile.following).toBe(true);
     });
   });
@@ -81,13 +81,13 @@ describe('ProfilesService', () => {
     it('should create follow record and return following true', async () => {
       mockUserRepository.findOne.mockResolvedValueOnce({
         id: 2,
-        username: 'jake',
+        username: 'binh',
         bio: null,
         image: null,
       });
       mockFollowRepository.findOne.mockResolvedValueOnce(null);
 
-      const res = await profilesService.followUser('jake', 1);
+      const res = await profilesService.followUser('binh', 1);
 
       expect(mockFollowRepository.save).toHaveBeenCalled();
       expect(res.profile.following).toBe(true);
@@ -98,12 +98,12 @@ describe('ProfilesService', () => {
     it('should delete follow record and return following false', async () => {
       mockUserRepository.findOne.mockResolvedValueOnce({
         id: 2,
-        username: 'jake',
+        username: 'binh',
         bio: null,
         image: null,
       });
 
-      const res = await profilesService.unfollowUser('jake', 1);
+      const res = await profilesService.unfollowUser('binh', 1);
 
       expect(mockFollowRepository.delete).toHaveBeenCalledWith({
         followerId: 1,

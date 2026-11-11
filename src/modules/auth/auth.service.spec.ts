@@ -35,8 +35,8 @@ describe('AuthService', () => {
   describe('register', () => {
     const registerDto = {
       user: {
-        username: 'jake',
-        email: 'jake@jake.jake',
+        username: 'binh',
+        email: 'binh@binh.binh',
         password: 'password123',
       },
     };
@@ -63,8 +63,8 @@ describe('AuthService', () => {
       mockUsersService.findByUsername.mockResolvedValueOnce(null);
       mockUsersService.create.mockResolvedValueOnce({
         id: 1,
-        username: 'jake',
-        email: 'jake@jake.jake',
+        username: 'binh',
+        email: 'binh@binh.binh',
         password: 'hashed_password',
         bio: null,
         image: null,
@@ -72,8 +72,8 @@ describe('AuthService', () => {
 
       const result = await authService.register(registerDto);
 
-      expect(result.user.email).toBe('jake@jake.jake');
-      expect(result.user.username).toBe('jake');
+      expect(result.user.email).toBe('binh@binh.binh');
+      expect(result.user.username).toBe('binh');
       expect(result.user.token).toBe('mock.jwt.token');
     });
   });
@@ -81,7 +81,7 @@ describe('AuthService', () => {
   describe('login', () => {
     const loginDto = {
       user: {
-        email: 'jake@jake.jake',
+        email: 'binh@binh.binh',
         password: 'password123',
       },
     };
@@ -98,8 +98,8 @@ describe('AuthService', () => {
       const hashedPassword = await bcrypt.hash('different_password', 10);
       mockUsersService.findByEmailWithPassword.mockResolvedValueOnce({
         id: 1,
-        email: 'jake@jake.jake',
-        username: 'jake',
+        email: 'binh@binh.binh',
+        username: 'binh',
         password: hashedPassword,
       });
 
@@ -112,14 +112,14 @@ describe('AuthService', () => {
       const hashedPassword = await bcrypt.hash('password123', 10);
       mockUsersService.findByEmailWithPassword.mockResolvedValueOnce({
         id: 1,
-        email: 'jake@jake.jake',
-        username: 'jake',
+        email: 'binh@binh.binh',
+        username: 'binh',
         password: hashedPassword,
       });
 
       const result = await authService.login(loginDto);
 
-      expect(result.user.email).toBe('jake@jake.jake');
+      expect(result.user.email).toBe('binh@binh.binh');
       expect(result.user.token).toBe('mock.jwt.token');
     });
   });
