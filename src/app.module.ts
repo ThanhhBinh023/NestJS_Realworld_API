@@ -14,6 +14,7 @@ import { User } from './modules/users/entities/user.entity.js';
 import { Follow } from './modules/profiles/entities/follow.entity.js';
 import { Article } from './modules/articles/entities/article.entity.js';
 import { Tag } from './modules/tags/entities/tag.entity.js';
+import { Favorite } from './modules/articles/entities/favorite.entity.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { ProfilesModule } from './modules/profiles/profiles.module.js';
@@ -52,7 +53,7 @@ function getI18nPath(): string {
         username: configService.get<string>('DB_USERNAME', 'root'),
         password: configService.get<string>('DB_PASSWORD', '123456'),
         database: configService.get<string>('DB_NAME', 'realworld_nest'),
-        entities: [User, Follow, Article, Tag],
+        entities: [User, Follow, Article, Tag, Favorite],
         synchronize: false,
         logging: false,
       }),

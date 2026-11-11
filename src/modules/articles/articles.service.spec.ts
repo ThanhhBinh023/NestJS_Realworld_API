@@ -7,6 +7,7 @@ describe('ArticlesService', () => {
   let articlesService: ArticlesService;
   let mockArticleRepository: any;
   let mockFollowRepository: any;
+  let mockFavoriteRepository: any;
   let mockTagsService: any;
 
   const mockAuthor = {
@@ -22,8 +23,8 @@ describe('ArticlesService', () => {
       create: vi.fn().mockImplementation((dto) => dto),
       save: vi.fn().mockImplementation((article) => ({
         ...article,
-        id: 1,
-        createdAt: new Date(),
+        id: article.id ?? 1,
+        createdAt: article.createdAt ?? new Date(),
         updatedAt: new Date(),
       })),
       remove: vi.fn(),
@@ -32,7 +33,20 @@ describe('ArticlesService', () => {
 
     mockFollowRepository = {
       findOne: vi.fn(),
-      find: vi.fn(),
+      find: vi.fn().mockResolvedValue([]),
+    };
+
+    mockFavoriteRepository = {
+      findOne: vi.fn(),
+      find: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockImplementation((dto) => dto),
+      save: vi.fn().mockImplementation((fav) => ({
+        ...fav,
+        id: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })),
+      remove: vi.fn(),
     };
 
     mockTagsService = {
@@ -46,6 +60,7 @@ describe('ArticlesService', () => {
     articlesService = new ArticlesService(
       mockArticleRepository,
       mockFollowRepository,
+      mockFavoriteRepository,
       mockTagsService,
     );
   });
@@ -141,15 +156,31 @@ describe('ArticlesService', () => {
       expect(qb.skip).toHaveBeenCalledWith(10);
     });
 
-    it('should return empty list when favorited filter is used (until PR 06)', async () => {
-      const result = await articlesService.findAll({ favorited: 'binh' });
+    it('should filter articles by favorited username when favorited query is provided', async () => {
+      const qb: any = {
+        leftJoinAndSelect: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockReturnThis(),
+        take: vi.fn().mockReturnThis(),
+        skip: vi.fn().mockReturnThis(),
+        andWhere: vi.fn().mockReturnThis(),
+        getManyAndCount: vi.fn().mockResolvedValueOnce([[], 0]),
+      };
+
+      mockArticleRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await articlesService.findAll(
+        { favorited: 'binh' },
+        undefined,
+      );
 
       expect(result.articles).toEqual([]);
-      expect(result.articlesCount).toBe(0);
-      expect(mockArticleRepository.createQueryBuilder).not.toHaveBeenCalled();
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'article.id IN (SELECT f.articleId FROM favorites f JOIN users u ON u.id = f.userId WHERE u.username = :favorited)',
+        { favorited: 'binh' },
+      );
     });
 
-    it('should mark following true if current user follows article author', async () => {
+    it('should mark following and favorited true when applicable', async () => {
       const mockArticles = [
         {
           id: 1,
@@ -157,7 +188,7 @@ describe('ArticlesService', () => {
           title: 'Art 1',
           description: 'Desc 1',
           body: 'Body 1',
-          favoritesCount: 0,
+          favoritesCount: 1,
           author: mockAuthor,
           tags: [],
           createdAt: new Date(),
@@ -178,10 +209,14 @@ describe('ArticlesService', () => {
       mockFollowRepository.find.mockResolvedValueOnce([
         { followerId: 2, followingId: 1 },
       ]);
+      mockFavoriteRepository.find.mockResolvedValueOnce([
+        { userId: 2, articleId: 1 },
+      ]);
 
       const result = await articlesService.findAll({}, 2);
 
       expect(result.articles[0].author.following).toBe(true);
+      expect(result.articles[0].favorited).toBe(true);
     });
   });
 
@@ -251,25 +286,27 @@ describe('ArticlesService', () => {
       );
     });
 
-    it('should return article and determine isFollowing correctly', async () => {
+    it('should return article and determine isFollowing and isFavorited correctly', async () => {
       mockArticleRepository.findOne.mockResolvedValueOnce({
         id: 1,
         slug: 'existing-article',
         title: 'Existing Article',
         description: 'Desc',
         body: 'Body content',
-        favoritesCount: 0,
+        favoritesCount: 1,
         author: mockAuthor,
         tags: [{ name: 'tag1' }],
         createdAt: new Date(),
         updatedAt: new Date(),
       });
       mockFollowRepository.findOne.mockResolvedValueOnce({ id: 1 });
+      mockFavoriteRepository.findOne.mockResolvedValueOnce({ id: 1 });
 
       const result = await articlesService.findBySlug('existing-article', 2);
 
       expect(result.article.slug).toBe('existing-article');
       expect(result.article.author.following).toBe(true);
+      expect(result.article.favorited).toBe(true);
     });
   });
 
@@ -337,6 +374,131 @@ describe('ArticlesService', () => {
       expect(mockArticleRepository.remove).toHaveBeenCalledWith(
         existingArticle,
       );
+    });
+  });
+
+  describe('favorite', () => {
+    it('should throw NotFoundException if article does not exist', async () => {
+      mockArticleRepository.findOne.mockResolvedValueOnce(null);
+
+      await expect(articlesService.favorite('missing-slug', 1)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should add favorite, increment favoritesCount, and return favorited: true', async () => {
+      const article = {
+        id: 1,
+        slug: 'favorite-slug',
+        title: 'Favorite Title',
+        description: 'Desc',
+        body: 'Body',
+        favoritesCount: 0,
+        author: mockAuthor,
+        tags: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockArticleRepository.findOne.mockResolvedValueOnce(article);
+      mockFavoriteRepository.findOne.mockResolvedValueOnce(null);
+
+      const result = await articlesService.favorite('favorite-slug', 2);
+
+      expect(mockFavoriteRepository.create).toHaveBeenCalledWith({
+        userId: 2,
+        articleId: 1,
+      });
+      expect(mockFavoriteRepository.save).toHaveBeenCalled();
+      expect(result.article.favorited).toBe(true);
+      expect(result.article.favoritesCount).toBe(1);
+    });
+
+    it('should not increment count if already favorited', async () => {
+      const article = {
+        id: 1,
+        slug: 'favorite-slug',
+        title: 'Favorite Title',
+        description: 'Desc',
+        body: 'Body',
+        favoritesCount: 1,
+        author: mockAuthor,
+        tags: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockArticleRepository.findOne.mockResolvedValueOnce(article);
+      mockFavoriteRepository.findOne.mockResolvedValueOnce({
+        id: 10,
+        userId: 2,
+        articleId: 1,
+      });
+
+      const result = await articlesService.favorite('favorite-slug', 2);
+
+      expect(mockFavoriteRepository.create).not.toHaveBeenCalled();
+      expect(result.article.favorited).toBe(true);
+      expect(result.article.favoritesCount).toBe(1);
+    });
+  });
+
+  describe('unfavorite', () => {
+    it('should throw NotFoundException if article does not exist', async () => {
+      mockArticleRepository.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        articlesService.unfavorite('missing-slug', 1),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should remove favorite, decrement favoritesCount, and return favorited: false', async () => {
+      const article = {
+        id: 1,
+        slug: 'favorite-slug',
+        title: 'Favorite Title',
+        description: 'Desc',
+        body: 'Body',
+        favoritesCount: 1,
+        author: mockAuthor,
+        tags: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const existingFav = { id: 10, userId: 2, articleId: 1 };
+
+      mockArticleRepository.findOne.mockResolvedValueOnce(article);
+      mockFavoriteRepository.findOne.mockResolvedValueOnce(existingFav);
+
+      const result = await articlesService.unfavorite('favorite-slug', 2);
+
+      expect(mockFavoriteRepository.remove).toHaveBeenCalledWith(existingFav);
+      expect(result.article.favorited).toBe(false);
+      expect(result.article.favoritesCount).toBe(0);
+    });
+
+    it('should not decrement below zero if not previously favorited', async () => {
+      const article = {
+        id: 1,
+        slug: 'favorite-slug',
+        title: 'Favorite Title',
+        description: 'Desc',
+        body: 'Body',
+        favoritesCount: 0,
+        author: mockAuthor,
+        tags: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockArticleRepository.findOne.mockResolvedValueOnce(article);
+      mockFavoriteRepository.findOne.mockResolvedValueOnce(null);
+
+      const result = await articlesService.unfavorite('favorite-slug', 2);
+
+      expect(mockFavoriteRepository.remove).not.toHaveBeenCalled();
+      expect(result.article.favorited).toBe(false);
+      expect(result.article.favoritesCount).toBe(0);
     });
   });
 });

@@ -182,6 +182,78 @@ describe('Articles & Tags CRUD (e2e)', () => {
     expect(feedItem.author.following).toBe(true);
   });
 
+  it('POST /api/articles/:slug/favorite - Unauthorized without token (401)', async () => {
+    await request(app.getHttpServer())
+      .post(`/api/articles/${createdSlug}/favorite`)
+      .expect(401);
+  });
+
+  it('POST /api/articles/:slug/favorite - Favorite an article successfully', async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/api/articles/${createdSlug}/favorite`)
+      .set('Authorization', `Token ${otherToken}`)
+      .expect(200);
+
+    expect(res.body).toHaveProperty('article');
+    expect(res.body.article.favorited).toBe(true);
+    expect(res.body.article.favoritesCount).toBe(1);
+  });
+
+  it('POST /api/articles/:slug/favorite - Favoriting again is idempotent', async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/api/articles/${createdSlug}/favorite`)
+      .set('Authorization', `Token ${otherToken}`)
+      .expect(200);
+
+    expect(res.body.article.favorited).toBe(true);
+    expect(res.body.article.favoritesCount).toBe(1);
+  });
+
+  it('GET /api/articles/:slug - Details reflect favorited status with auth header', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/articles/${createdSlug}`)
+      .set('Authorization', `Token ${otherToken}`)
+      .expect(200);
+
+    expect(res.body.article.favorited).toBe(true);
+    expect(res.body.article.favoritesCount).toBe(1);
+  });
+
+  it('GET /api/articles - Filter articles by favorited username', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/articles?favorited=${otherUser.username}`)
+      .expect(200);
+
+    expect(res.body.articlesCount).toBe(1);
+    expect(res.body.articles[0].slug).toBe(createdSlug);
+  });
+
+  it('DELETE /api/articles/:slug/favorite - Unauthorized without token (401)', async () => {
+    await request(app.getHttpServer())
+      .delete(`/api/articles/${createdSlug}/favorite`)
+      .expect(401);
+  });
+
+  it('DELETE /api/articles/:slug/favorite - Unfavorite an article successfully', async () => {
+    const res = await request(app.getHttpServer())
+      .delete(`/api/articles/${createdSlug}/favorite`)
+      .set('Authorization', `Token ${otherToken}`)
+      .expect(200);
+
+    expect(res.body).toHaveProperty('article');
+    expect(res.body.article.favorited).toBe(false);
+    expect(res.body.article.favoritesCount).toBe(0);
+  });
+
+  it('GET /api/articles - Returns empty after unfavoriting', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/articles?favorited=${otherUser.username}`)
+      .expect(200);
+
+    expect(res.body.articlesCount).toBe(0);
+    expect(res.body.articles).toEqual([]);
+  });
+
   it('PUT /api/articles/:slug - Non-author fails to update (403)', async () => {
     await request(app.getHttpServer())
       .put(`/api/articles/${createdSlug}`)

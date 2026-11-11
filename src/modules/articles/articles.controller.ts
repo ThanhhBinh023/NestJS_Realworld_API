@@ -168,4 +168,48 @@ export class ArticlesController {
     await this.articlesService.delete(slug, currentUserId);
     return { message: 'Article deleted successfully' };
   }
+
+  @Post(':slug/favorite')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Favorite an article' })
+  @ApiOkResponse({
+    description: 'Favorited article details',
+    type: ArticleResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Missing or invalid authentication token',
+  })
+  @ApiNotFoundResponse({
+    description: 'Article not found',
+  })
+  async favoriteArticle(
+    @Param('slug') slug: string,
+    @CurrentUser('id') currentUserId: number,
+  ): Promise<ArticleResponseDto> {
+    return this.articlesService.favorite(slug, currentUserId);
+  }
+
+  @Delete(':slug/favorite')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Unfavorite an article' })
+  @ApiOkResponse({
+    description: 'Unfavorited article details',
+    type: ArticleResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Missing or invalid authentication token',
+  })
+  @ApiNotFoundResponse({
+    description: 'Article not found',
+  })
+  async unfavoriteArticle(
+    @Param('slug') slug: string,
+    @CurrentUser('id') currentUserId: number,
+  ): Promise<ArticleResponseDto> {
+    return this.articlesService.unfavorite(slug, currentUserId);
+  }
 }

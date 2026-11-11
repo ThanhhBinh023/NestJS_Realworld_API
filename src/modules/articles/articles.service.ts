@@ -4,8 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Article } from './entities/article.entity.js';
+import { Favorite } from './entities/favorite.entity.js';
 import { User } from '../users/entities/user.entity.js';
 import { Follow } from '../profiles/entities/follow.entity.js';
 import { TagsService } from '../tags/tags.service.js';
@@ -24,6 +25,8 @@ export class ArticlesService {
     private readonly articleRepository: Repository<Article>,
     @InjectRepository(Follow)
     private readonly followRepository: Repository<Follow>,
+    @InjectRepository(Favorite)
+    private readonly favoriteRepository: Repository<Favorite>,
     private readonly tagsService: TagsService,
   ) {}
 
@@ -56,13 +59,6 @@ export class ArticlesService {
   ): Promise<ArticlesListResponseDto> {
     const { tag, author, favorited, limit = 20, offset = 0 } = query;
 
-    if (favorited) {
-      return {
-        articles: [],
-        articlesCount: 0,
-      };
-    }
-
     const qb = this.articleRepository
       .createQueryBuilder('article')
       .leftJoinAndSelect('article.author', 'author')
@@ -82,9 +78,20 @@ export class ArticlesService {
       qb.andWhere('author.username = :author', { author });
     }
 
+    if (favorited) {
+      qb.andWhere(
+        'article.id IN (SELECT f.articleId FROM favorites f JOIN users u ON u.id = f.userId WHERE u.username = :favorited)',
+        { favorited },
+      );
+    }
+
     const [articles, articlesCount] = await qb.getManyAndCount();
 
     const followedAuthorIds = await this.getFollowedAuthorIds(currentUserId);
+    const favoritedArticleIds = await this.getFavoritedArticleIds(
+      currentUserId,
+      articles.map((a) => a.id),
+    );
 
     return {
       articles: articles.map(
@@ -92,7 +99,7 @@ export class ArticlesService {
           this.buildArticleResponse(
             article,
             followedAuthorIds.has(article.author.id),
-            false,
+            favoritedArticleIds.has(article.id),
           ).article,
       ),
       articlesCount,
@@ -128,9 +135,19 @@ export class ArticlesService {
       .skip(offset)
       .getManyAndCount();
 
+    const favoritedArticleIds = await this.getFavoritedArticleIds(
+      currentUserId,
+      articles.map((a) => a.id),
+    );
+
     return {
       articles: articles.map(
-        (article) => this.buildArticleResponse(article, true, false).article,
+        (article) =>
+          this.buildArticleResponse(
+            article,
+            true,
+            favoritedArticleIds.has(article.id),
+          ).article,
       ),
       articlesCount,
     };
@@ -155,8 +172,9 @@ export class ArticlesService {
       currentUserId,
       article.author.id,
     );
+    const isFavorited = await this.checkIsFavorited(currentUserId, article.id);
 
-    return this.buildArticleResponse(article, isFollowing, false);
+    return this.buildArticleResponse(article, isFollowing, isFavorited);
   }
 
   async update(
@@ -196,13 +214,10 @@ export class ArticlesService {
       article.body = body;
     }
 
-    const updatedArticle = await this.articleRepository.save(article);
-    const isFollowing = await this.checkIsFollowing(
-      currentUserId,
-      article.author.id,
-    );
+    const updated = await this.articleRepository.save(article);
+    const isFavorited = await this.checkIsFavorited(currentUserId, updated.id);
 
-    return this.buildArticleResponse(updatedArticle, isFollowing, false);
+    return this.buildArticleResponse(updated, false, isFavorited);
   }
 
   async delete(slug: string, currentUserId: number): Promise<void> {
@@ -224,6 +239,76 @@ export class ArticlesService {
     }
 
     await this.articleRepository.remove(article);
+  }
+
+  async favorite(
+    slug: string,
+    currentUserId: number,
+  ): Promise<ArticleResponseDto> {
+    const article = await this.articleRepository.findOne({
+      where: { slug },
+      relations: { author: true, tags: true },
+    });
+
+    if (!article) {
+      throw new NotFoundException({
+        errors: { article: ['not found'] },
+      });
+    }
+
+    const existing = await this.favoriteRepository.findOne({
+      where: { userId: currentUserId, articleId: article.id },
+    });
+
+    if (!existing) {
+      const fav = this.favoriteRepository.create({
+        userId: currentUserId,
+        articleId: article.id,
+      });
+      await this.favoriteRepository.save(fav);
+      article.favoritesCount = (article.favoritesCount ?? 0) + 1;
+      await this.articleRepository.save(article);
+    }
+
+    const isFollowing = await this.checkIsFollowing(
+      currentUserId,
+      article.author.id,
+    );
+
+    return this.buildArticleResponse(article, isFollowing, true);
+  }
+
+  async unfavorite(
+    slug: string,
+    currentUserId: number,
+  ): Promise<ArticleResponseDto> {
+    const article = await this.articleRepository.findOne({
+      where: { slug },
+      relations: { author: true, tags: true },
+    });
+
+    if (!article) {
+      throw new NotFoundException({
+        errors: { article: ['not found'] },
+      });
+    }
+
+    const existing = await this.favoriteRepository.findOne({
+      where: { userId: currentUserId, articleId: article.id },
+    });
+
+    if (existing) {
+      await this.favoriteRepository.remove(existing);
+      article.favoritesCount = Math.max(0, (article.favoritesCount ?? 1) - 1);
+      await this.articleRepository.save(article);
+    }
+
+    const isFollowing = await this.checkIsFollowing(
+      currentUserId,
+      article.author.id,
+    );
+
+    return this.buildArticleResponse(article, isFollowing, false);
   }
 
   async generateUniqueSlug(
@@ -255,6 +340,35 @@ export class ArticlesService {
       where: { followerId: currentUserId },
     });
     return new Set(userFollows.map((f) => f.followingId));
+  }
+
+  private async getFavoritedArticleIds(
+    currentUserId?: number,
+    articleIds?: number[],
+  ): Promise<Set<number>> {
+    if (!currentUserId || !articleIds || articleIds.length === 0) {
+      return new Set();
+    }
+    const favorites = await this.favoriteRepository.find({
+      where: {
+        userId: currentUserId,
+        articleId: In(articleIds),
+      },
+    });
+    return new Set(favorites.map((f) => f.articleId));
+  }
+
+  private async checkIsFavorited(
+    currentUserId?: number,
+    articleId?: number,
+  ): Promise<boolean> {
+    if (!currentUserId || !articleId) {
+      return false;
+    }
+    const favorite = await this.favoriteRepository.findOne({
+      where: { userId: currentUserId, articleId },
+    });
+    return Boolean(favorite);
   }
 
   private async checkIsFollowing(
