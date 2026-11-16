@@ -83,6 +83,18 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
+  async updateAvatar(userId: number, avatarUrl: string): Promise<User> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new UnprocessableEntityException({
+        errors: { user: ['not found'] },
+      });
+    }
+
+    user.image = avatarUrl;
+    return this.userRepository.save(user);
+  }
+
   buildUserResponse(user: User, token: string): UserResponseDto {
     return {
       user: {

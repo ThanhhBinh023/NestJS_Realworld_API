@@ -41,3 +41,8 @@ Thumbs.db
 
 *.tsbuildinfo
 
+# Uploads
+/uploads/*
+!/uploads/.gitkeep
+!/uploads/avatars/.gitkeep
+
