@@ -22,6 +22,7 @@ import { ProfilesModule } from './modules/profiles/profiles.module.js';
 import { ArticlesModule } from './modules/articles/articles.module.js';
 import { CommentsModule } from './modules/comments/comments.module.js';
 import { TagsModule } from './modules/tags/tags.module.js';
+import { UploadModule } from './modules/upload/upload.module.js';
 import { HelloModule } from './modules/hello/hello.module.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -78,6 +79,7 @@ function getI18nPath(): string {
     TagsModule,
     ArticlesModule,
     CommentsModule,
+    UploadModule,
     HelloModule,
   ],
 })

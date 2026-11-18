@@ -45,4 +45,5 @@ Thumbs.db
 /uploads/*
 !/uploads/.gitkeep
 !/uploads/avatars/.gitkeep
+!/uploads/images/.gitkeep
 

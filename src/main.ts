@@ -65,6 +65,7 @@ async function bootstrap(): Promise<void> {
     .addTag('Articles', 'Article CRUD and feed operations')
     .addTag('Comments', 'Article comments operations')
     .addTag('Favorites', 'Article favorites operations')
+    .addTag('Upload', 'Image and media upload operations')
     .addTag('Tags', 'Article tags')
     .build();
 
