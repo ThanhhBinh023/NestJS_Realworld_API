@@ -37,6 +37,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { User } from './entities/user.entity.js';
 import { extractJwtToken } from '../auth/strategies/jwt.strategy.js';
 import { AuthService } from '../auth/auth.service.js';
+import { UploadService } from '../upload/upload.service.js';
 
 @ApiTags('User and Profile')
 @Controller('user')
@@ -45,6 +46,7 @@ export class UsersController {
     private readonly usersService: UsersService,
     @Inject(forwardRef(() => AuthService))
     private readonly authService: AuthService,
+    private readonly uploadService: UploadService,
   ) {}
 
   @Get()
@@ -130,7 +132,11 @@ export class UsersController {
       });
     }
 
-    const avatarUrl = `/uploads/avatars/${uploadedFile.filename}`;
+    const uploadRes = await this.uploadService.uploadImage(
+      uploadedFile,
+      'avatars',
+    );
+    const avatarUrl = uploadRes.image.url;
     const updatedUser = await this.usersService.updateAvatar(userId, avatarUrl);
     const token =
       extractJwtToken(req) ?? this.authService.generateToken(updatedUser);
