@@ -112,6 +112,15 @@ describe('Generic Image Upload API (e2e)', () => {
   });
 
   afterAll(async () => {
+    if (uploadedImageUrl) {
+      const filePath = path.join(
+        process.cwd(),
+        uploadedImageUrl.replace(/^\//, ''),
+      );
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
     await app.close();
   });
 });

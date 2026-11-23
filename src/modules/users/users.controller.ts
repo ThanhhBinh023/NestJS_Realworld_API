@@ -132,12 +132,19 @@ export class UsersController {
       });
     }
 
+    const currentUser = await this.usersService.findById(userId);
+    const oldAvatar = currentUser?.image;
+
     const uploadRes = await this.uploadService.uploadImage(
       uploadedFile,
       'avatars',
     );
     const avatarUrl = uploadRes.image.url;
     const updatedUser = await this.usersService.updateAvatar(userId, avatarUrl);
+
+    if (oldAvatar && oldAvatar !== avatarUrl) {
+      await this.uploadService.deleteFile(oldAvatar);
+    }
     const token =
       extractJwtToken(req) ?? this.authService.generateToken(updatedUser);
     return this.usersService.buildUserResponse(updatedUser, token);

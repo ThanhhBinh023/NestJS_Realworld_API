@@ -82,4 +82,19 @@ export class CloudinaryService {
       readable.pipe(uploadStream);
     });
   }
+
+  async deleteFile(publicId: string): Promise<any> {
+    if (!this.isConfigured()) {
+      return;
+    }
+    return new Promise((resolve, reject) => {
+      this.cloudinary.uploader.destroy(publicId, (error, result) => {
+        if (error) {
+          this.logger.error('Failed to delete file from Cloudinary', error);
+          return reject(error);
+        }
+        resolve(result);
+      });
+    });
+  }
 }

@@ -120,11 +120,17 @@ describe('User Avatar Upload (e2e)', () => {
     expect(res.header['content-type']).toContain('image/png');
   });
 
-  it('POST /api/user/avatar - Successfully upload avatar using field name "avatar"', async () => {
+  it('POST /api/user/avatar - Successfully upload avatar using field name "avatar" and clean up previous avatar', async () => {
     const jpegBuffer = Buffer.from(
       '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=',
       'base64',
     );
+
+    const oldAvatarPath = path.join(
+      process.cwd(),
+      uploadedAvatarUrl.replace(/^\//, ''),
+    );
+    expect(fs.existsSync(oldAvatarPath)).toBe(true);
 
     const res = await request(app.getHttpServer())
       .post('/api/user/avatar')
@@ -136,6 +142,21 @@ describe('User Avatar Upload (e2e)', () => {
       .expect(200);
 
     expect(res.body.user.image).toMatch(/^\/uploads\/avatars\/avatar-.*\.jpg$/);
+
+    // Verify previous avatar was removed to avoid orphaned files
+    expect(fs.existsSync(oldAvatarPath)).toBe(false);
+
+    // Verify new avatar exists on disk
+    const newAvatarPath = path.join(
+      process.cwd(),
+      res.body.user.image.replace(/^\//, ''),
+    );
+    expect(fs.existsSync(newAvatarPath)).toBe(true);
+
+    // Clean up created file
+    if (fs.existsSync(newAvatarPath)) {
+      fs.unlinkSync(newAvatarPath);
+    }
   });
 
   afterAll(async () => {

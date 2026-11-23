@@ -64,4 +64,43 @@ export class UploadService {
       },
     };
   }
+
+  async deleteFile(fileUrl?: string | null): Promise<void> {
+    if (!fileUrl) {
+      return;
+    }
+
+    // 1. Local Disk file cleanup
+    if (fileUrl.startsWith('/uploads/')) {
+      const filePath = path.join(process.cwd(), fileUrl.replace(/^\//, ''));
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (error) {
+          this.logger.warn(`Failed to delete local file: ${filePath}`, error);
+        }
+      }
+      return;
+    }
+
+    // 2. Cloudinary file cleanup
+    if (
+      this.cloudinaryService.isConfigured() &&
+      fileUrl.includes('res.cloudinary.com')
+    ) {
+      try {
+        const matches = fileUrl.match(
+          /\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/,
+        );
+        if (matches && matches[1]) {
+          await this.cloudinaryService.deleteFile(matches[1]);
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Failed to delete file from Cloudinary: ${fileUrl}`,
+          error,
+        );
+      }
+    }
+  }
 }

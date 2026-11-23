@@ -1,3 +1,5 @@
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
 import { UploadService } from './upload.service.js';
@@ -6,6 +8,7 @@ describe('UploadService', () => {
   const mockCloudinaryService: any = {
     isConfigured: vi.fn().mockReturnValue(false),
     uploadFile: vi.fn(),
+    deleteFile: vi.fn(),
   };
 
   const uploadService = new UploadService(mockCloudinaryService);
@@ -56,6 +59,43 @@ describe('UploadService', () => {
       );
       expect(result.image.filename).toBe('realworld/images/sample');
       expect(mockCloudinaryService.uploadFile).toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteFile', () => {
+    it('should return silently if fileUrl is null or undefined', async () => {
+      await expect(uploadService.deleteFile(null)).resolves.toBeUndefined();
+      await expect(
+        uploadService.deleteFile(undefined),
+      ).resolves.toBeUndefined();
+    });
+
+    it('should delete local file when url starts with /uploads/', async () => {
+      const testDir = path.join(process.cwd(), 'uploads', 'avatars');
+      if (!fs.existsSync(testDir)) {
+        fs.mkdirSync(testDir, { recursive: true });
+      }
+      const testFile = path.join(testDir, 'test-delete.png');
+      fs.writeFileSync(testFile, 'test');
+
+      expect(fs.existsSync(testFile)).toBe(true);
+
+      await uploadService.deleteFile('/uploads/avatars/test-delete.png');
+
+      expect(fs.existsSync(testFile)).toBe(false);
+    });
+
+    it('should call cloudinaryService.deleteFile when fileUrl is a Cloudinary URL', async () => {
+      mockCloudinaryService.isConfigured.mockReturnValueOnce(true);
+      mockCloudinaryService.deleteFile.mockResolvedValueOnce({ result: 'ok' });
+
+      await uploadService.deleteFile(
+        'https://res.cloudinary.com/demo/image/upload/v1234567890/realworld/avatars/sample.jpg',
+      );
+
+      expect(mockCloudinaryService.deleteFile).toHaveBeenCalledWith(
+        'realworld/avatars/sample',
+      );
     });
   });
 });
