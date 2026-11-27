@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
@@ -19,7 +20,6 @@ import {
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
-  ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import { CommentsService } from './comments.service.js';
 import { CreateCommentDto } from './dto/create-comment.dto.js';
@@ -49,7 +49,7 @@ export class CommentsController {
   @ApiNotFoundResponse({
     description: 'Article not found',
   })
-  @ApiUnprocessableEntityResponse({
+  @ApiBadRequestResponse({
     description: 'Validation failed',
   })
   async create(
@@ -85,6 +85,9 @@ export class CommentsController {
   @ApiOperation({ summary: 'Delete a comment from an article' })
   @ApiOkResponse({
     description: 'Comment deleted successfully',
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid comment ID',
   })
   @ApiUnauthorizedResponse({
     description: 'Missing or invalid authentication token',

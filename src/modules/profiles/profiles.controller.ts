@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -58,6 +59,9 @@ export class ProfilesController {
     description: 'User followed successfully',
     type: ProfileResponseDto,
   })
+  @ApiBadRequestResponse({
+    description: 'Cannot follow yourself',
+  })
   @ApiUnauthorizedResponse({
     description: 'Missing or invalid authentication token',
   })
@@ -78,6 +82,9 @@ export class ProfilesController {
   @ApiOkResponse({
     description: 'User unfollowed successfully',
     type: ProfileResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Cannot unfollow yourself',
   })
   @ApiUnauthorizedResponse({
     description: 'Missing or invalid authentication token',

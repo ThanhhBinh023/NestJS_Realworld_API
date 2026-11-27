@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
@@ -20,7 +21,6 @@ import {
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
-  ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import { ArticlesService } from './articles.service.js';
 import { CreateArticleDto } from './dto/create-article.dto.js';
@@ -91,7 +91,7 @@ export class ArticlesController {
   @ApiUnauthorizedResponse({
     description: 'Missing or invalid authentication token',
   })
-  @ApiUnprocessableEntityResponse({
+  @ApiBadRequestResponse({
     description: 'Validation failed',
   })
   async create(
@@ -126,6 +126,9 @@ export class ArticlesController {
   @ApiOkResponse({
     description: 'Article updated successfully',
     type: ArticleResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Validation failed',
   })
   @ApiUnauthorizedResponse({
     description: 'Missing or invalid authentication token',

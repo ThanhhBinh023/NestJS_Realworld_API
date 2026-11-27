@@ -11,6 +11,7 @@ describe('Comments API (e2e)', () => {
   let userAToken = '';
   let userBToken = '';
   let articleSlug = '';
+  let otherArticleSlug = '';
   let commentId = 0;
 
   const now = Date.now();
@@ -66,6 +67,20 @@ describe('Comments API (e2e)', () => {
         },
       });
     articleSlug = resArticle.body.article.slug;
+
+    // User A creates a second article to test cross-article comment deletion
+    const resOtherArticle = await request(app.getHttpServer())
+      .post('/api/articles')
+      .set('Authorization', `Token ${userAToken}`)
+      .send({
+        article: {
+          title: `Other Article ${now}`,
+          description: 'Second article for isolation testing',
+          body: 'Content for second article',
+          tagList: ['comments'],
+        },
+      });
+    otherArticleSlug = resOtherArticle.body.article.slug;
   });
 
   it('POST /api/articles/:slug/comments - Unauthorized without token (401)', async () => {
@@ -154,6 +169,13 @@ describe('Comments API (e2e)', () => {
       .delete(`/api/articles/${articleSlug}/comments/${commentId}`)
       .set('Authorization', `Token ${userAToken}`)
       .expect(403);
+  });
+
+  it('DELETE /api/articles/:slug/comments/:id - Not Found if deleting comment via another article slug (404)', async () => {
+    await request(app.getHttpServer())
+      .delete(`/api/articles/${otherArticleSlug}/comments/${commentId}`)
+      .set('Authorization', `Token ${userBToken}`)
+      .expect(404);
   });
 
   it('DELETE /api/articles/:slug/comments/:id - Successfully delete comment by author', async () => {

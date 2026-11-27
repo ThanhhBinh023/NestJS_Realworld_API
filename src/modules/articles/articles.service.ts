@@ -8,8 +8,8 @@ import { In, Repository } from 'typeorm';
 import { Article } from './entities/article.entity.js';
 import { Favorite } from './entities/favorite.entity.js';
 import { User } from '../users/entities/user.entity.js';
-import { Follow } from '../profiles/entities/follow.entity.js';
 import { TagsService } from '../tags/tags.service.js';
+import { ProfilesService } from '../profiles/profiles.service.js';
 import { CreateArticleDto } from './dto/create-article.dto.js';
 import { UpdateArticleDto } from './dto/update-article.dto.js';
 import { ArticleResponseDto } from './dto/article-response.dto.js';
@@ -23,11 +23,10 @@ export class ArticlesService {
   constructor(
     @InjectRepository(Article)
     private readonly articleRepository: Repository<Article>,
-    @InjectRepository(Follow)
-    private readonly followRepository: Repository<Follow>,
     @InjectRepository(Favorite)
     private readonly favoriteRepository: Repository<Favorite>,
     private readonly tagsService: TagsService,
+    private readonly profilesService: ProfilesService,
   ) {}
 
   async create(
@@ -87,7 +86,10 @@ export class ArticlesService {
 
     const [articles, articlesCount] = await qb.getManyAndCount();
 
-    const followedAuthorIds = await this.getFollowedAuthorIds(currentUserId);
+    const followedAuthorIds = await this.profilesService.getFollowedAuthorIds(
+      currentUserId,
+      articles.map((a) => a.author.id),
+    );
     const favoritedArticleIds = await this.getFavoritedArticleIds(
       currentUserId,
       articles.map((a) => a.id),
@@ -112,18 +114,17 @@ export class ArticlesService {
   ): Promise<ArticlesListResponseDto> {
     const { limit = 20, offset = 0 } = query;
 
-    const follows = await this.followRepository.find({
-      where: { followerId: currentUserId },
-    });
+    const followedAuthorIds =
+      await this.profilesService.getFollowedAuthorIds(currentUserId);
 
-    if (!follows || follows.length === 0) {
+    if (followedAuthorIds.size === 0) {
       return {
         articles: [],
         articlesCount: 0,
       };
     }
 
-    const followingIds = follows.map((f) => f.followingId);
+    const followingIds = [...followedAuthorIds];
 
     const [articles, articlesCount] = await this.articleRepository
       .createQueryBuilder('article')
@@ -168,7 +169,7 @@ export class ArticlesService {
       });
     }
 
-    const isFollowing = await this.checkIsFollowing(
+    const isFollowing = await this.profilesService.isFollowing(
       currentUserId,
       article.author.id,
     );
@@ -270,7 +271,7 @@ export class ArticlesService {
       await this.articleRepository.save(article);
     }
 
-    const isFollowing = await this.checkIsFollowing(
+    const isFollowing = await this.profilesService.isFollowing(
       currentUserId,
       article.author.id,
     );
@@ -303,7 +304,7 @@ export class ArticlesService {
       await this.articleRepository.save(article);
     }
 
-    const isFollowing = await this.checkIsFollowing(
+    const isFollowing = await this.profilesService.isFollowing(
       currentUserId,
       article.author.id,
     );
@@ -328,18 +329,6 @@ export class ArticlesService {
     }
 
     return candidateSlug;
-  }
-
-  private async getFollowedAuthorIds(
-    currentUserId?: number,
-  ): Promise<Set<number>> {
-    if (!currentUserId) {
-      return new Set();
-    }
-    const userFollows = await this.followRepository.find({
-      where: { followerId: currentUserId },
-    });
-    return new Set(userFollows.map((f) => f.followingId));
   }
 
   private async getFavoritedArticleIds(
@@ -371,19 +360,6 @@ export class ArticlesService {
     return Boolean(favorite);
   }
 
-  private async checkIsFollowing(
-    followerId?: number,
-    followingId?: number,
-  ): Promise<boolean> {
-    if (!followerId || !followingId || followerId === followingId) {
-      return false;
-    }
-    const follow = await this.followRepository.findOne({
-      where: { followerId, followingId },
-    });
-    return Boolean(follow);
-  }
-
   buildArticleResponse(
     article: Article,
     following: boolean,
@@ -400,12 +376,7 @@ export class ArticlesService {
         updatedAt: article.updatedAt,
         favorited,
         favoritesCount: article.favoritesCount ?? 0,
-        author: {
-          username: article.author.username,
-          bio: article.author.bio ?? null,
-          image: article.author.image ?? null,
-          following,
-        },
+        author: this.profilesService.buildProfileDto(article.author, following),
       },
     };
   }

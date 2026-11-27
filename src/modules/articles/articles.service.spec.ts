@@ -6,9 +6,9 @@ import { User } from '../users/entities/user.entity.js';
 describe('ArticlesService', () => {
   let articlesService: ArticlesService;
   let mockArticleRepository: any;
-  let mockFollowRepository: any;
   let mockFavoriteRepository: any;
   let mockTagsService: any;
+  let mockProfilesService: any;
 
   const mockAuthor = {
     id: 1,
@@ -29,11 +29,6 @@ describe('ArticlesService', () => {
       })),
       remove: vi.fn(),
       createQueryBuilder: vi.fn(),
-    };
-
-    mockFollowRepository = {
-      findOne: vi.fn(),
-      find: vi.fn().mockResolvedValue([]),
     };
 
     mockFavoriteRepository = {
@@ -57,11 +52,24 @@ describe('ArticlesService', () => {
         ),
     };
 
+    mockProfilesService = {
+      getFollowedAuthorIds: vi.fn().mockResolvedValue(new Set()),
+      isFollowing: vi.fn().mockResolvedValue(false),
+      buildProfileDto: vi
+        .fn()
+        .mockImplementation((user: User, following: boolean) => ({
+          username: user.username,
+          bio: user.bio ?? null,
+          image: user.image ?? null,
+          following,
+        })),
+    };
+
     articlesService = new ArticlesService(
       mockArticleRepository,
-      mockFollowRepository,
       mockFavoriteRepository,
       mockTagsService,
+      mockProfilesService,
     );
   });
 
@@ -116,7 +124,7 @@ describe('ArticlesService', () => {
       };
 
       mockArticleRepository.createQueryBuilder.mockReturnValue(qb);
-      mockFollowRepository.find.mockResolvedValueOnce([]);
+      mockProfilesService.getFollowedAuthorIds.mockResolvedValueOnce(new Set());
 
       const result = await articlesService.findAll({}, undefined);
 
@@ -206,15 +214,19 @@ describe('ArticlesService', () => {
       };
 
       mockArticleRepository.createQueryBuilder.mockReturnValue(qb);
-      mockFollowRepository.find.mockResolvedValueOnce([
-        { followerId: 2, followingId: 1 },
-      ]);
+      mockProfilesService.getFollowedAuthorIds.mockResolvedValueOnce(
+        new Set([1]),
+      );
       mockFavoriteRepository.find.mockResolvedValueOnce([
         { userId: 2, articleId: 1 },
       ]);
 
       const result = await articlesService.findAll({}, 2);
 
+      expect(mockProfilesService.getFollowedAuthorIds).toHaveBeenCalledWith(
+        2,
+        [1],
+      );
       expect(result.articles[0].author.following).toBe(true);
       expect(result.articles[0].favorited).toBe(true);
     });
@@ -222,7 +234,7 @@ describe('ArticlesService', () => {
 
   describe('findFeed', () => {
     it('should return empty list when user follows no one', async () => {
-      mockFollowRepository.find.mockResolvedValueOnce([]);
+      mockProfilesService.getFollowedAuthorIds.mockResolvedValueOnce(new Set());
 
       const result = await articlesService.findFeed({}, 1);
 
@@ -232,9 +244,9 @@ describe('ArticlesService', () => {
     });
 
     it('should return feed articles of followed users', async () => {
-      mockFollowRepository.find.mockResolvedValueOnce([
-        { followerId: 2, followingId: 1 },
-      ]);
+      mockProfilesService.getFollowedAuthorIds.mockResolvedValueOnce(
+        new Set([1]),
+      );
 
       const mockArticles = [
         {
@@ -299,7 +311,7 @@ describe('ArticlesService', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      mockFollowRepository.findOne.mockResolvedValueOnce({ id: 1 });
+      mockProfilesService.isFollowing.mockResolvedValueOnce(true);
       mockFavoriteRepository.findOne.mockResolvedValueOnce({ id: 1 });
 
       const result = await articlesService.findBySlug('existing-article', 2);

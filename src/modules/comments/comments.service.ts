@@ -7,8 +7,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Comment } from './entities/comment.entity.js';
 import { Article } from '../articles/entities/article.entity.js';
-import { Follow } from '../profiles/entities/follow.entity.js';
 import { User } from '../users/entities/user.entity.js';
+import { ProfilesService } from '../profiles/profiles.service.js';
 import { CreateCommentDto } from './dto/create-comment.dto.js';
 import {
   CommentDataDto,
@@ -23,8 +23,7 @@ export class CommentsService {
     private readonly commentRepository: Repository<Comment>,
     @InjectRepository(Article)
     private readonly articleRepository: Repository<Article>,
-    @InjectRepository(Follow)
-    private readonly followRepository: Repository<Follow>,
+    private readonly profilesService: ProfilesService,
   ) {}
 
   async create(
@@ -59,13 +58,10 @@ export class CommentsService {
       order: { createdAt: 'DESC' },
     });
 
-    let followedAuthorIds = new Set<number>();
-    if (currentUserId) {
-      const userFollows = await this.followRepository.find({
-        where: { followerId: currentUserId },
-      });
-      followedAuthorIds = new Set(userFollows.map((f) => f.followingId));
-    }
+    const followedAuthorIds = await this.profilesService.getFollowedAuthorIds(
+      currentUserId,
+      comments.map((comment) => comment.author.id),
+    );
 
     return {
       comments: comments.map((comment) =>
@@ -124,12 +120,7 @@ export class CommentsService {
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
       body: comment.body,
-      author: {
-        username: comment.author.username,
-        bio: comment.author.bio ?? null,
-        image: comment.author.image ?? null,
-        following,
-      },
+      author: this.profilesService.buildProfileDto(comment.author, following),
     };
   }
 }

@@ -8,11 +8,11 @@ export class Comment extends BaseEntity {
   @Column({ type: 'text' })
   body!: string;
 
-  @ManyToOne(() => User, { eager: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'authorId' })
   author!: User;
 
-  @ManyToOne(() => Article, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Article, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'articleId' })
   article!: Article;
 }

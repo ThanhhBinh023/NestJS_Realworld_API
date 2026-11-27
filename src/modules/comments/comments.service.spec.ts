@@ -8,7 +8,7 @@ describe('CommentsService', () => {
   let commentsService: CommentsService;
   let mockCommentRepository: any;
   let mockArticleRepository: any;
-  let mockFollowRepository: any;
+  let mockProfilesService: any;
 
   const mockAuthor = {
     id: 1,
@@ -41,14 +41,22 @@ describe('CommentsService', () => {
       findOne: vi.fn(),
     };
 
-    mockFollowRepository = {
-      find: vi.fn().mockResolvedValue([]),
+    mockProfilesService = {
+      getFollowedAuthorIds: vi.fn().mockResolvedValue(new Set()),
+      buildProfileDto: vi
+        .fn()
+        .mockImplementation((user: User, following: boolean) => ({
+          username: user.username,
+          bio: user.bio ?? null,
+          image: user.image ?? null,
+          following,
+        })),
     };
 
     commentsService = new CommentsService(
       mockCommentRepository,
       mockArticleRepository,
-      mockFollowRepository,
+      mockProfilesService,
     );
   });
 
@@ -106,12 +114,21 @@ describe('CommentsService', () => {
         },
       ];
       mockCommentRepository.find.mockResolvedValueOnce(mockComments);
-      mockFollowRepository.find.mockResolvedValueOnce([
-        { followerId: 1, followingId: 2 },
-      ]);
+      mockProfilesService.getFollowedAuthorIds.mockResolvedValueOnce(
+        new Set([2]),
+      );
 
       const result = await commentsService.findAll('test-article-slug', 1);
 
+      expect(mockCommentRepository.find).toHaveBeenCalledWith({
+        where: { article: { id: mockArticle.id } },
+        relations: { author: true },
+        order: { createdAt: 'DESC' },
+      });
+      expect(mockProfilesService.getFollowedAuthorIds).toHaveBeenCalledWith(
+        1,
+        [2],
+      );
       expect(result.comments.length).toBe(1);
       expect(result.comments[0].body).toBe('Comment 1');
       expect(result.comments[0].author.following).toBe(true);
@@ -127,13 +144,23 @@ describe('CommentsService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw NotFoundException if comment not found', async () => {
-      mockArticleRepository.findOne.mockResolvedValueOnce(mockArticle);
+    it('should throw NotFoundException if comment not found for the given article', async () => {
+      const otherArticle = {
+        id: 2,
+        slug: 'other-article-slug',
+        title: 'Other Article',
+      } as Article;
+      mockArticleRepository.findOne.mockResolvedValueOnce(otherArticle);
       mockCommentRepository.findOne.mockResolvedValueOnce(null);
 
       await expect(
-        commentsService.delete('test-article-slug', 99, 1),
+        commentsService.delete('other-article-slug', 1, 1),
       ).rejects.toThrow(NotFoundException);
+
+      expect(mockCommentRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1, article: { id: otherArticle.id } },
+        relations: { author: true },
+      });
     });
 
     it('should throw ForbiddenException if user is not author of comment', async () => {
@@ -148,7 +175,7 @@ describe('CommentsService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('should remove comment when user is author', async () => {
+    it('should filter comment by article.id and remove comment when user is author', async () => {
       mockArticleRepository.findOne.mockResolvedValueOnce(mockArticle);
       const existingComment = {
         id: 1,
@@ -158,6 +185,10 @@ describe('CommentsService', () => {
 
       await commentsService.delete('test-article-slug', 1, 1);
 
+      expect(mockCommentRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1, article: { id: mockArticle.id } },
+        relations: { author: true },
+      });
       expect(mockCommentRepository.remove).toHaveBeenCalledWith(
         existingComment,
       );
