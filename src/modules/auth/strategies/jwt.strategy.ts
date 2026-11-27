@@ -5,6 +5,7 @@ import type { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UsersService } from '../../users/users.service.js';
 import { User } from '../../users/entities/user.entity.js';
+import { RedisService } from '../../redis/redis.service.js';
 
 export interface JwtPayload {
   sub: number;
@@ -28,6 +29,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
+    private readonly redisService: RedisService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -38,10 +40,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       secretOrKey:
         configService.get<string>('JWT_SECRET') ||
         'super_secret_jwt_key_medium_clone_realworld',
+      passReqToCallback: true,
     });
   }
 
-  async validate(payload: JwtPayload): Promise<User> {
+  async validate(req: Request, payload: JwtPayload): Promise<User> {
+    const token = extractJwtToken(req);
+    if (token && (await this.redisService.isTokenBlacklisted(token))) {
+      throw new UnauthorizedException('Token has been revoked');
+    }
+
     const user = await this.usersService.findById(payload.sub);
     if (!user) {
       throw new UnauthorizedException('User not found or token invalid');

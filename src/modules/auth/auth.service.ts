@@ -11,6 +11,9 @@ import { User } from '../users/entities/user.entity.js';
 import { RegisterUserDto } from './dto/register-user.dto.js';
 import { LoginUserDto } from './dto/login-user.dto.js';
 import { UserResponseDto } from '../users/dto/user-response.dto.js';
+import { RedisService } from '../redis/redis.service.js';
+
+const DEFAULT_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 @Injectable()
 export class AuthService {
@@ -18,6 +21,7 @@ export class AuthService {
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    private readonly redisService: RedisService,
   ) {}
 
   async register(registerDto: RegisterUserDto): Promise<UserResponseDto> {
@@ -87,5 +91,17 @@ export class AuthService {
 
   getCurrentUser(user: User, token: string): UserResponseDto {
     return this.usersService.buildUserResponse(user, token);
+  }
+
+  /** Blacklists the given JWT in Redis until its expiration time. */
+  async logout(token: string): Promise<{ message: string }> {
+    const decoded = this.jwtService.decode(token) as { exp?: number } | null;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const ttlSeconds = decoded?.exp
+      ? Math.max(decoded.exp - nowSeconds, 0)
+      : DEFAULT_TOKEN_TTL_SECONDS;
+
+    await this.redisService.blacklistToken(token, ttlSeconds);
+    return { message: 'Logged out successfully' };
   }
 }

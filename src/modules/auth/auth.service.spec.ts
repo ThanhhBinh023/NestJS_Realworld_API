@@ -7,6 +7,7 @@ describe('AuthService', () => {
   let authService: AuthService;
   let mockUsersService: any;
   let mockJwtService: any;
+  let mockRedisService: any;
 
   beforeEach(() => {
     mockUsersService = {
@@ -27,9 +28,18 @@ describe('AuthService', () => {
 
     mockJwtService = {
       sign: vi.fn().mockReturnValue('mock.jwt.token'),
+      decode: vi.fn(),
     };
 
-    authService = new AuthService(mockUsersService, mockJwtService);
+    mockRedisService = {
+      blacklistToken: vi.fn().mockResolvedValue(undefined),
+    };
+
+    authService = new AuthService(
+      mockUsersService,
+      mockJwtService,
+      mockRedisService,
+    );
   });
 
   describe('register', () => {
@@ -121,6 +131,35 @@ describe('AuthService', () => {
 
       expect(result.user.email).toBe('binh@binh.binh');
       expect(result.user.token).toBe('mock.jwt.token');
+    });
+  });
+
+  describe('logout', () => {
+    it('should blacklist token in Redis with remaining TTL from exp claim', async () => {
+      const futureExp = Math.floor(Date.now() / 1000) + 1800;
+      mockJwtService.decode.mockReturnValueOnce({ exp: futureExp });
+
+      const result = await authService.logout('valid.jwt.token');
+
+      expect(mockRedisService.blacklistToken).toHaveBeenCalledWith(
+        'valid.jwt.token',
+        expect.any(Number),
+      );
+      const passedTtl = mockRedisService.blacklistToken.mock.calls[0][1];
+      expect(passedTtl).toBeGreaterThan(1790);
+      expect(passedTtl).toBeLessThanOrEqual(1800);
+      expect(result).toEqual({ message: 'Logged out successfully' });
+    });
+
+    it('should fallback to default TTL when exp claim is absent', async () => {
+      mockJwtService.decode.mockReturnValueOnce(null);
+
+      await authService.logout('token.without.exp');
+
+      expect(mockRedisService.blacklistToken).toHaveBeenCalledWith(
+        'token.without.exp',
+        7 * 24 * 60 * 60,
+      );
     });
   });
 });

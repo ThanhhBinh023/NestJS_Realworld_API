@@ -23,6 +23,7 @@ import { ArticlesModule } from './modules/articles/articles.module.js';
 import { CommentsModule } from './modules/comments/comments.module.js';
 import { TagsModule } from './modules/tags/tags.module.js';
 import { HelloModule } from './modules/hello/hello.module.js';
+import { RedisModule } from './modules/redis/redis.module.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -78,6 +79,7 @@ function getI18nPath(): string {
     TagsModule,
     ArticlesModule,
     CommentsModule,
+    RedisModule,
     HelloModule,
   ],
 })
