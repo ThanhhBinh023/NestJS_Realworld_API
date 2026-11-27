@@ -1,68 +1,73 @@
-import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { Test, TestingModule } from '@nestjs/testing';
-import { ValidationPipe } from '@nestjs/common';
+import * as path from 'node:path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
-import { describe, beforeAll, afterAll, it, expect } from 'vitest';
-import { AppModule } from '../src/app.module.js';
-import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter.js';
+import { DataSource } from 'typeorm';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import { Attachment } from '../src/modules/attachments/entities/attachment.entity.js';
+import { createE2EApp, truncateDatabase } from './helpers/e2e-db.helper.js';
+import { seedUser, type SeededUser } from './helpers/fake-data.helper.js';
 
-describe('User Avatar Upload (e2e)', () => {
+const PNG_BUFFER = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64',
+);
+
+const JPEG_BUFFER = Buffer.from(
+  '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=',
+  'base64',
+);
+
+describe('User Avatar Upload & Attachments (e2e)', () => {
   let app: NestExpressApplication;
-  let userToken = '';
-  let uploadedAvatarUrl = '';
-
-  const now = Date.now();
-  const testUser = {
-    username: `avatar_user_${now}`,
-    email: `avatar_user_${now}@test.com`,
-    password: 'password123',
-  };
+  let dataSource: DataSource;
+  let seededUser: SeededUser;
+  const createdFiles: string[] = [];
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    ({ app, dataSource } = await createE2EApp());
+  });
 
-    app = moduleFixture.createNestApplication<NestExpressApplication>();
-    app.setGlobalPrefix('api');
+  beforeEach(async () => {
+    seededUser = await seedUser(app);
+  });
 
-    const uploadsPath = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadsPath)) {
-      fs.mkdirSync(uploadsPath, { recursive: true });
+  afterEach(async () => {
+    while (createdFiles.length > 0) {
+      const fileUrl = createdFiles.pop();
+      if (fileUrl) {
+        const filePath = path.join(process.cwd(), fileUrl.replace(/^\//, ''));
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
     }
-    app.useStaticAssets(uploadsPath, {
-      prefix: '/uploads/',
-    });
+    await truncateDatabase(dataSource);
+  });
 
-    app.useGlobalFilters(new HttpExceptionFilter());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-      }),
-    );
-    await app.init();
-
-    // Register test user
-    const res = await request(app.getHttpServer())
-      .post('/api/users')
-      .send({ user: testUser });
-    userToken = res.body.user.token;
+  afterAll(async () => {
+    await app.close();
   });
 
   it('POST /api/user/avatar - Unauthorized without token (401)', async () => {
     await request(app.getHttpServer())
       .post('/api/user/avatar')
-      .attach('file', Buffer.from('fake-image-data'), 'avatar.png')
+      .attach('file', PNG_BUFFER, 'avatar.png')
       .expect(401);
   });
 
   it('POST /api/user/avatar - 400 Bad Request when no file is sent', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/user/avatar')
-      .set('Authorization', `Token ${userToken}`)
+      .set('Authorization', `Token ${seededUser.token}`)
       .expect(400);
 
     expect(res.body).toHaveProperty('errors');
@@ -72,73 +77,77 @@ describe('User Avatar Upload (e2e)', () => {
   it('POST /api/user/avatar - 400 Bad Request when file is not an allowed image type', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/user/avatar')
-      .set('Authorization', `Token ${userToken}`)
+      .set('Authorization', `Token ${seededUser.token}`)
       .attach('file', Buffer.from('plain text data'), 'document.txt')
       .expect(400);
 
     expect(res.body).toHaveProperty('errors');
   });
 
-  it('POST /api/user/avatar - Successfully upload avatar image (.png)', async () => {
-    // 1x1 transparent PNG buffer
-    const pngBuffer = Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
-      'base64',
-    );
-
+  it('POST /api/user/avatar - Saves attachment record with UUID, updates user.image, and serves static file', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/user/avatar')
-      .set('Authorization', `Token ${userToken}`)
-      .attach('file', pngBuffer, {
+      .set('Authorization', `Token ${seededUser.token}`)
+      .attach('file', PNG_BUFFER, {
         filename: 'avatar.png',
         contentType: 'image/png',
       })
       .expect(200);
 
-    expect(res.body).toHaveProperty('user');
-    expect(res.body.user.username).toBe(testUser.username);
-    expect(res.body.user.image).toBeDefined();
-    expect(res.body.user.image).toMatch(/^\/uploads\/avatars\/avatar-.*\.png$/);
+    const avatarUrl: string = res.body.user.image;
+    createdFiles.push(avatarUrl);
 
-    uploadedAvatarUrl = res.body.user.image;
-  });
+    expect(avatarUrl).toMatch(/^\/uploads\/avatars\/avatar-.*\.png$/);
 
-  it('GET /api/user - Verify user.image is updated', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/api/user')
-      .set('Authorization', `Token ${userToken}`)
-      .expect(200);
-
-    expect(res.body.user.image).toBe(uploadedAvatarUrl);
-  });
-
-  it('GET /uploads/avatars/:filename - Verify static file is accessible', async () => {
-    const res = await request(app.getHttpServer())
-      .get(uploadedAvatarUrl)
-      .expect(200);
-
-    expect(res.header['content-type']).toContain('image/png');
-  });
-
-  it('POST /api/user/avatar - Successfully upload avatar using field name "avatar"', async () => {
-    const jpegBuffer = Buffer.from(
-      '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=',
-      'base64',
+    const attachmentRepo = dataSource.getRepository(Attachment);
+    const attachments = await attachmentRepo.find();
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
+    expect(attachments[0].attachableType).toBe('user');
+    expect(attachments[0].url).toBe(avatarUrl);
+    expect(attachments[0].fileType).toBe('image/png');
+    expect(attachments[0].fileSize).toBe(PNG_BUFFER.length);
 
-    const res = await request(app.getHttpServer())
+    const staticRes = await request(app.getHttpServer())
+      .get(avatarUrl)
+      .expect(200);
+    expect(staticRes.header['content-type']).toContain('image/png');
+  });
+
+  it('POST /api/user/avatar - Replaces previous attachment and cleans up old disk file when field "avatar" is used', async () => {
+    const firstRes = await request(app.getHttpServer())
       .post('/api/user/avatar')
-      .set('Authorization', `Token ${userToken}`)
-      .attach('avatar', jpegBuffer, {
+      .set('Authorization', `Token ${seededUser.token}`)
+      .attach('file', PNG_BUFFER, {
+        filename: 'first.png',
+        contentType: 'image/png',
+      })
+      .expect(200);
+
+    const firstUrl: string = firstRes.body.user.image;
+    const firstPath = path.join(process.cwd(), firstUrl.replace(/^\//, ''));
+    expect(fs.existsSync(firstPath)).toBe(true);
+
+    const secondRes = await request(app.getHttpServer())
+      .post('/api/user/avatar')
+      .set('Authorization', `Token ${seededUser.token}`)
+      .attach('avatar', JPEG_BUFFER, {
         filename: 'photo.jpg',
         contentType: 'image/jpeg',
       })
       .expect(200);
 
-    expect(res.body.user.image).toMatch(/^\/uploads\/avatars\/avatar-.*\.jpg$/);
-  });
+    const secondUrl: string = secondRes.body.user.image;
+    createdFiles.push(secondUrl);
 
-  afterAll(async () => {
-    await app.close();
+    expect(secondUrl).toMatch(/^\/uploads\/avatars\/avatar-.*\.jpg$/);
+    expect(fs.existsSync(firstPath)).toBe(false);
+
+    const attachmentRepo = dataSource.getRepository(Attachment);
+    const attachments = await attachmentRepo.find();
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].url).toBe(secondUrl);
   });
 });
