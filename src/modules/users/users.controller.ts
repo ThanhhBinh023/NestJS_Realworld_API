@@ -77,8 +77,11 @@ export class UsersController {
   @ApiUnauthorizedResponse({
     description: 'Missing or invalid authentication token',
   })
+  @ApiBadRequestResponse({
+    description: 'Validation failed',
+  })
   @ApiUnprocessableEntityResponse({
-    description: 'Validation failed or email/username already taken',
+    description: 'Email or username already taken',
   })
   async updateUser(
     @CurrentUser('id') userId: number,

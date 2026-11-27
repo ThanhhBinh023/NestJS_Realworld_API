@@ -4,10 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from '../users/entities/user.entity.js';
 import { Follow } from './entities/follow.entity.js';
-import { ProfileResponseDto } from './dto/profile-response.dto.js';
+import { ProfileDto, ProfileResponseDto } from './dto/profile-response.dto.js';
 
 @Injectable()
 export class ProfilesService {
@@ -112,14 +112,50 @@ export class ProfilesService {
     return this.buildProfileResponse(targetUser, false);
   }
 
+  async getFollowedAuthorIds(
+    currentUserId?: number,
+    authorIds?: number[],
+  ): Promise<Set<number>> {
+    if (!currentUserId || (authorIds !== undefined && authorIds.length === 0)) {
+      return new Set();
+    }
+
+    const uniqueAuthorIds = authorIds ? [...new Set(authorIds)] : undefined;
+    const userFollows = await this.followRepository.find({
+      where: uniqueAuthorIds
+        ? { followerId: currentUserId, followingId: In(uniqueAuthorIds) }
+        : { followerId: currentUserId },
+    });
+
+    return new Set(userFollows.map((f) => f.followingId));
+  }
+
+  async isFollowing(
+    followerId?: number,
+    followingId?: number,
+  ): Promise<boolean> {
+    if (!followerId || !followingId || followerId === followingId) {
+      return false;
+    }
+
+    const follow = await this.followRepository.findOne({
+      where: { followerId, followingId },
+    });
+    return Boolean(follow);
+  }
+
+  buildProfileDto(user: User, following: boolean): ProfileDto {
+    return {
+      username: user.username,
+      bio: user.bio ?? null,
+      image: user.image ?? null,
+      following,
+    };
+  }
+
   buildProfileResponse(user: User, following: boolean): ProfileResponseDto {
     return {
-      profile: {
-        username: user.username,
-        bio: user.bio ?? null,
-        image: user.image ?? null,
-        following,
-      },
+      profile: this.buildProfileDto(user, following),
     };
   }
 }

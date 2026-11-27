@@ -1,5 +1,6 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
@@ -22,8 +23,11 @@ export class AuthController {
     description: 'User registered successfully',
     type: UserResponseDto,
   })
+  @ApiBadRequestResponse({
+    description: 'Validation failed',
+  })
   @ApiUnprocessableEntityResponse({
-    description: 'Validation failed or email/username already taken',
+    description: 'Email or username already taken',
   })
   async register(
     @Body() registerDto: RegisterUserDto,
@@ -37,6 +41,9 @@ export class AuthController {
   @ApiOkResponse({
     description: 'User authenticated successfully',
     type: UserResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Validation failed',
   })
   @ApiUnprocessableEntityResponse({
     description: 'Invalid email or password',
