@@ -37,6 +37,8 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { User } from './entities/user.entity.js';
 import { extractJwtToken } from '../auth/strategies/jwt.strategy.js';
 import { AuthService } from '../auth/auth.service.js';
+import { AttachmentsService } from '../attachments/attachments.service.js';
+import { AttachableType } from '../attachments/entities/attachment.entity.js';
 
 @ApiTags('User and Profile')
 @Controller('user')
@@ -45,6 +47,7 @@ export class UsersController {
     private readonly usersService: UsersService,
     @Inject(forwardRef(() => AuthService))
     private readonly authService: AuthService,
+    private readonly attachmentsService: AttachmentsService,
   ) {}
 
   @Get()
@@ -134,6 +137,17 @@ export class UsersController {
     }
 
     const avatarUrl = `/uploads/avatars/${uploadedFile.filename}`;
+    await this.attachmentsService.replaceForOwner(
+      AttachableType.USER,
+      String(userId),
+      {
+        url: avatarUrl,
+        fileName: uploadedFile.filename,
+        fileType: uploadedFile.mimetype,
+        fileSize: uploadedFile.size,
+      },
+    );
+
     const updatedUser = await this.usersService.updateAvatar(userId, avatarUrl);
     const token =
       extractJwtToken(req) ?? this.authService.generateToken(updatedUser);
