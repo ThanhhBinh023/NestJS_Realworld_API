@@ -6,6 +6,7 @@ import { Article } from '../modules/articles/entities/article.entity.js';
 import { Tag } from '../modules/tags/entities/tag.entity.js';
 import { Favorite } from '../modules/articles/entities/favorite.entity.js';
 import { Comment } from '../modules/comments/entities/comment.entity.js';
+import { Attachment } from '../modules/attachments/entities/attachment.entity.js';
 
 dotenv.config();
 
@@ -16,7 +17,7 @@ export const dataSourceOptions: DataSourceOptions = {
   username: process.env.DB_USERNAME || 'root',
   password: process.env.DB_PASSWORD || '123456',
   database: process.env.DB_NAME || 'realworld_nest',
-  entities: [User, Follow, Article, Tag, Favorite, Comment],
+  entities: [User, Follow, Article, Tag, Favorite, Comment, Attachment],
   migrations: ['dist/database/migrations/*.js'],
   synchronize: false,
   logging: false,

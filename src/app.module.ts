@@ -16,12 +16,14 @@ import { Article } from './modules/articles/entities/article.entity.js';
 import { Tag } from './modules/tags/entities/tag.entity.js';
 import { Favorite } from './modules/articles/entities/favorite.entity.js';
 import { Comment } from './modules/comments/entities/comment.entity.js';
+import { Attachment } from './modules/attachments/entities/attachment.entity.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { ProfilesModule } from './modules/profiles/profiles.module.js';
 import { ArticlesModule } from './modules/articles/articles.module.js';
 import { CommentsModule } from './modules/comments/comments.module.js';
 import { TagsModule } from './modules/tags/tags.module.js';
+import { AttachmentsModule } from './modules/attachments/attachments.module.js';
 import { HelloModule } from './modules/hello/hello.module.js';
 import { RedisModule } from './modules/redis/redis.module.js';
 
@@ -56,7 +58,7 @@ function getI18nPath(): string {
         username: configService.get<string>('DB_USERNAME', 'root'),
         password: configService.get<string>('DB_PASSWORD', '123456'),
         database: configService.get<string>('DB_NAME', 'realworld_nest'),
-        entities: [User, Follow, Article, Tag, Favorite, Comment],
+        entities: [User, Follow, Article, Tag, Favorite, Comment, Attachment],
         synchronize: false,
         logging: false,
       }),
@@ -79,6 +81,7 @@ function getI18nPath(): string {
     TagsModule,
     ArticlesModule,
     CommentsModule,
+    AttachmentsModule,
     RedisModule,
     HelloModule,
   ],
