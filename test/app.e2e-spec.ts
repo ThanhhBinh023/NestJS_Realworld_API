@@ -1,27 +1,35 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
-import { App } from 'supertest/types';
-import { describe, beforeEach, afterEach, it, expect } from 'vitest';
-import { AppModule } from './../src/app.module.js';
+import { DataSource } from 'typeorm';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import { createE2EApp, truncateDatabase } from './helpers/e2e-db.helper.js';
 
 describe('HelloController (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: NestExpressApplication;
+  let dataSource: DataSource;
 
-  beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+  beforeAll(async () => {
+    ({ app, dataSource } = await createE2EApp());
+  });
 
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-      }),
-    );
-    await app.init();
+  beforeEach(() => {
+    // No DB seed needed for stateless HelloController
+  });
+
+  afterEach(async () => {
+    await truncateDatabase(dataSource);
+  });
+
+  afterAll(async () => {
+    await app.close();
   });
 
   it('/api/hello (GET) - returns English by default', async () => {
@@ -40,9 +48,5 @@ describe('HelloController (e2e)', () => {
 
     expect(res.body).toHaveProperty('message', 'Xin chào thế giới!');
     expect(res.body).toHaveProperty('lang', 'vi');
-  });
-
-  afterEach(async () => {
-    await app.close();
   });
 });
