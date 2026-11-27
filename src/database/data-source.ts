@@ -8,9 +8,7 @@ import { Favorite } from '../modules/articles/entities/favorite.entity.js';
 import { Comment } from '../modules/comments/entities/comment.entity.js';
 import { Attachment } from '../modules/attachments/entities/attachment.entity.js';
 
-dotenv.config({
-  path: process.env.NODE_ENV === 'test' ? '.env.test' : '.env',
-});
+dotenv.config();
 
 export const dataSourceOptions: DataSourceOptions = {
   type: 'mysql',
@@ -18,11 +16,7 @@ export const dataSourceOptions: DataSourceOptions = {
   port: parseInt(process.env.DB_PORT || '3306', 10),
   username: process.env.DB_USERNAME || 'root',
   password: process.env.DB_PASSWORD || '123456',
-  database:
-    process.env.DB_NAME ||
-    (process.env.NODE_ENV === 'test'
-      ? 'realworld_nest_test'
-      : 'realworld_nest'),
+  database: process.env.DB_NAME || 'realworld_nest',
   entities: [User, Follow, Article, Tag, Favorite, Comment, Attachment],
   migrations: ['dist/database/migrations/*.js'],
   synchronize: false,

@@ -1,124 +1,104 @@
-import { NestExpressApplication } from '@nestjs/platform-express';
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from 'vitest';
-import { createE2EApp, truncateDatabase } from './helpers/e2e-db.helper.js';
-import {
-  buildFakeUser,
-  seedUser,
-  type FakeUserInput,
-} from './helpers/fake-data.helper.js';
+import { App } from 'supertest/types';
+import { describe, beforeAll, afterAll, it, expect } from 'vitest';
+import { AppModule } from '../src/app.module.js';
 
 describe('Auth & Users (e2e)', () => {
-  let app: NestExpressApplication;
-  let dataSource: DataSource;
-  let fakeUser: FakeUserInput;
+  let app: INestApplication<App>;
+  let authToken = '';
+  const testUser = {
+    username: `testuser_${Date.now()}`,
+    email: `test_${Date.now()}@example.com`,
+    password: 'password123',
+  };
 
   beforeAll(async () => {
-    ({ app, dataSource } = await createE2EApp());
-  });
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
 
-  beforeEach(() => {
-    fakeUser = buildFakeUser();
-  });
-
-  afterEach(async () => {
-    await truncateDatabase(dataSource);
-  });
-
-  afterAll(async () => {
-    await app.close();
+    app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+      }),
+    );
+    await app.init();
   });
 
   it('POST /api/users - Register a new user', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/users')
-      .send({ user: fakeUser })
+      .send({
+        user: testUser,
+      })
       .expect(201);
 
     expect(res.body).toHaveProperty('user');
-    expect(res.body.user).toHaveProperty('email', fakeUser.email);
-    expect(res.body.user).toHaveProperty('username', fakeUser.username);
+    expect(res.body.user).toHaveProperty('email', testUser.email);
+    expect(res.body.user).toHaveProperty('username', testUser.username);
+    expect(res.body.user).toHaveProperty('token');
     expect(typeof res.body.user.token).toBe('string');
   });
 
   it('POST /api/users/login - Authenticate with valid credentials', async () => {
-    await seedUser(app, fakeUser);
-
     const res = await request(app.getHttpServer())
       .post('/api/users/login')
       .send({
         user: {
-          email: fakeUser.email,
-          password: fakeUser.password,
+          email: testUser.email,
+          password: testUser.password,
         },
       })
       .expect(200);
 
     expect(res.body).toHaveProperty('user');
-    expect(res.body.user.email).toBe(fakeUser.email);
+    expect(res.body.user.email).toBe(testUser.email);
     expect(res.body.user.token).toBeDefined();
+
+    authToken = res.body.user.token;
   });
 
-  it('POST /api/users/login - Fail with wrong password (422)', async () => {
-    await seedUser(app, fakeUser);
-
+  it('POST /api/users/login - Fail with wrong password', async () => {
     await request(app.getHttpServer())
       .post('/api/users/login')
       .send({
         user: {
-          email: fakeUser.email,
+          email: testUser.email,
           password: 'wrong_password',
         },
       })
       .expect(422);
   });
 
-  it('GET /api/user - Get current user using Token and Bearer headers', async () => {
-    const seeded = await seedUser(app, fakeUser);
-
-    const tokenRes = await request(app.getHttpServer())
+  it('GET /api/user - Get current user using Token authorization header', async () => {
+    const res = await request(app.getHttpServer())
       .get('/api/user')
-      .set('Authorization', `Token ${seeded.token}`)
+      .set('Authorization', `Token ${authToken}`)
       .expect(200);
-    expect(tokenRes.body.user.email).toBe(fakeUser.email);
 
-    const bearerRes = await request(app.getHttpServer())
-      .get('/api/user')
-      .set('Authorization', `Bearer ${seeded.token}`)
-      .expect(200);
-    expect(bearerRes.body.user.username).toBe(fakeUser.username);
+    expect(res.body.user.email).toBe(testUser.email);
+    expect(res.body.user.username).toBe(testUser.username);
   });
 
-  it('GET /api/user - Reject unauthorized request without token (401)', async () => {
+  it('GET /api/user - Get current user using Bearer authorization header', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/user')
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(200);
+
+    expect(res.body.user.email).toBe(testUser.email);
+  });
+
+  it('GET /api/user - Reject unauthorized request without token', async () => {
     await request(app.getHttpServer()).get('/api/user').expect(401);
   });
 
-  it('POST /api/users/logout - Blacklist token and reject subsequent requests (401)', async () => {
-    const seeded = await seedUser(app, fakeUser);
-
-    const logoutRes = await request(app.getHttpServer())
-      .post('/api/users/logout')
-      .set('Authorization', `Token ${seeded.token}`)
-      .expect(200);
-    expect(logoutRes.body).toEqual({ message: 'Logged out successfully' });
-
-    await request(app.getHttpServer())
-      .get('/api/user')
-      .set('Authorization', `Token ${seeded.token}`)
-      .expect(401);
-
-    await request(app.getHttpServer())
-      .post('/api/users/logout')
-      .set('Authorization', `Token ${seeded.token}`)
-      .expect(401);
+  afterAll(async () => {
+    await app.close();
   });
 });

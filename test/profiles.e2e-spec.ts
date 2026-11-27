@@ -1,39 +1,50 @@
-import { NestExpressApplication } from '@nestjs/platform-express';
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from 'vitest';
-import { createE2EApp, truncateDatabase } from './helpers/e2e-db.helper.js';
-import { seedUser, type SeededUser } from './helpers/fake-data.helper.js';
+import { App } from 'supertest/types';
+import { describe, beforeAll, afterAll, it, expect } from 'vitest';
+import { AppModule } from '../src/app.module.js';
+import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter.js';
 
 describe('User Update & Profiles (e2e)', () => {
-  let app: NestExpressApplication;
-  let dataSource: DataSource;
-  let userA: SeededUser;
-  let userB: SeededUser;
+  let app: INestApplication<App>;
+  let tokenA = '';
+  const now = Date.now();
+  const userA = {
+    username: `usera_${now}`,
+    email: `usera_${now}@test.com`,
+    password: 'password123',
+  };
+  const userB = {
+    username: `userb_${now}`,
+    email: `userb_${now}@test.com`,
+    password: 'password123',
+  };
 
   beforeAll(async () => {
-    ({ app, dataSource } = await createE2EApp());
-  });
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
 
-  beforeEach(async () => {
-    userA = await seedUser(app);
-    userB = await seedUser(app);
-  });
+    app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
+    app.useGlobalFilters(new HttpExceptionFilter());
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+      }),
+    );
+    await app.init();
 
-  afterEach(async () => {
-    await truncateDatabase(dataSource);
-  });
+    // Register User A
+    const resA = await request(app.getHttpServer())
+      .post('/api/users')
+      .send({ user: userA });
+    tokenA = resA.body.user.token;
 
-  afterAll(async () => {
-    await app.close();
+    // Register User B
+    await request(app.getHttpServer()).post('/api/users').send({ user: userB });
   });
 
   it('PUT /api/user - Update current user bio and image', async () => {
@@ -42,7 +53,7 @@ describe('User Update & Profiles (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .put('/api/user')
-      .set('Authorization', `Token ${userA.token}`)
+      .set('Authorization', `Token ${tokenA}`)
       .send({
         user: {
           bio: updatedBio,
@@ -65,33 +76,45 @@ describe('User Update & Profiles (e2e)', () => {
     expect(res.body.profile.following).toBe(false);
   });
 
-  it('POST & DELETE /api/profiles/:username/follow - Follow and unfollow user', async () => {
-    const followRes = await request(app.getHttpServer())
+  it('POST /api/profiles/:username/follow - User A follows User B', async () => {
+    const res = await request(app.getHttpServer())
       .post(`/api/profiles/${userB.username}/follow`)
-      .set('Authorization', `Token ${userA.token}`)
+      .set('Authorization', `Token ${tokenA}`)
       .expect(200);
-    expect(followRes.body.profile.following).toBe(true);
 
-    const profileRes = await request(app.getHttpServer())
+    expect(res.body.profile.username).toBe(userB.username);
+    expect(res.body.profile.following).toBe(true);
+  });
+
+  it('GET /api/profiles/:username - User A checks profile of User B (following: true)', async () => {
+    const res = await request(app.getHttpServer())
       .get(`/api/profiles/${userB.username}`)
-      .set('Authorization', `Token ${userA.token}`)
+      .set('Authorization', `Token ${tokenA}`)
       .expect(200);
-    expect(profileRes.body.profile.following).toBe(true);
 
-    const unfollowRes = await request(app.getHttpServer())
+    expect(res.body.profile.following).toBe(true);
+  });
+
+  it('DELETE /api/profiles/:username/follow - User A unfollows User B', async () => {
+    const res = await request(app.getHttpServer())
       .delete(`/api/profiles/${userB.username}/follow`)
-      .set('Authorization', `Token ${userA.token}`)
+      .set('Authorization', `Token ${tokenA}`)
       .expect(200);
-    expect(unfollowRes.body.profile.following).toBe(false);
+
+    expect(res.body.profile.following).toBe(false);
   });
 
   it('POST /api/profiles/:username/follow - Attempt to follow oneself fails (400)', async () => {
     const res = await request(app.getHttpServer())
       .post(`/api/profiles/${userA.username}/follow`)
-      .set('Authorization', `Token ${userA.token}`)
+      .set('Authorization', `Token ${tokenA}`)
       .expect(400);
 
     expect(res.body).toHaveProperty('errors');
     expect(res.body.errors).toHaveProperty('user');
+  });
+
+  afterAll(async () => {
+    await app.close();
   });
 });

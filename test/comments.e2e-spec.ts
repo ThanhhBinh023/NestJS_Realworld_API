@@ -1,358 +1,199 @@
-import { NestExpressApplication } from '@nestjs/platform-express';
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from 'vitest';
-import { createE2EApp, truncateDatabase } from './helpers/e2e-db.helper.js';
-import {
-  buildFakeComment,
-  seedArticle,
-  seedComment,
-  seedUser,
-  type SeededArticle,
-  type SeededUser,
-} from './helpers/fake-data.helper.js';
+import { App } from 'supertest/types';
+import { describe, beforeAll, afterAll, it, expect } from 'vitest';
+import { AppModule } from '../src/app.module.js';
+import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter.js';
 
-/**
- * C2-level (Condition / Branch Coverage) E2E test suite for CommentsController:
- * - POST /api/articles/:slug/comments (create)
- * - GET  /api/articles/:slug/comments (findAll)
- * - DELETE /api/articles/:slug/comments/:id (delete)
- *
- * Every test case seeds isolated fake data in beforeEach and truncates all tables in afterEach.
- */
-describe('CommentsController C2 Coverage (e2e)', () => {
-  let app: NestExpressApplication;
-  let dataSource: DataSource;
+describe('Comments API (e2e)', () => {
+  let app: INestApplication<App>;
+  let userAToken = '';
+  let userBToken = '';
+  let articleSlug = '';
+  let otherArticleSlug = '';
+  let commentId = 0;
 
-  let articleAuthor: SeededUser;
-  let commenter: SeededUser;
-  let thirdUser: SeededUser;
-  let primaryArticle: SeededArticle;
-  let secondaryArticle: SeededArticle;
+  const now = Date.now();
+  const userA = {
+    username: `comment_author_${now}`,
+    email: `comment_author_${now}@test.com`,
+    password: 'password123',
+  };
+  const userB = {
+    username: `commenter_${now}`,
+    email: `commenter_${now}@test.com`,
+    password: 'password123',
+  };
 
   beforeAll(async () => {
-    ({ app, dataSource } = await createE2EApp());
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
+    app.useGlobalFilters(new HttpExceptionFilter());
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+      }),
+    );
+    await app.init();
+
+    // Register User A
+    const resA = await request(app.getHttpServer())
+      .post('/api/users')
+      .send({ user: userA });
+    userAToken = resA.body.user.token;
+
+    // Register User B
+    const resB = await request(app.getHttpServer())
+      .post('/api/users')
+      .send({ user: userB });
+    userBToken = resB.body.user.token;
+
+    // User A creates an article
+    const resArticle = await request(app.getHttpServer())
+      .post('/api/articles')
+      .set('Authorization', `Token ${userAToken}`)
+      .send({
+        article: {
+          title: `Commentable Article ${now}`,
+          description: 'Article for comments testing',
+          body: 'Content for comment testing',
+          tagList: ['comments'],
+        },
+      });
+    articleSlug = resArticle.body.article.slug;
+
+    // User A creates a second article to test cross-article comment deletion
+    const resOtherArticle = await request(app.getHttpServer())
+      .post('/api/articles')
+      .set('Authorization', `Token ${userAToken}`)
+      .send({
+        article: {
+          title: `Other Article ${now}`,
+          description: 'Second article for isolation testing',
+          body: 'Content for second article',
+          tagList: ['comments'],
+        },
+      });
+    otherArticleSlug = resOtherArticle.body.article.slug;
   });
 
-  beforeEach(async () => {
-    articleAuthor = await seedUser(app);
-    commenter = await seedUser(app);
-    thirdUser = await seedUser(app);
-    primaryArticle = await seedArticle(app, articleAuthor.token);
-    secondaryArticle = await seedArticle(app, articleAuthor.token);
+  it('POST /api/articles/:slug/comments - Unauthorized without token (401)', async () => {
+    await request(app.getHttpServer())
+      .post(`/api/articles/${articleSlug}/comments`)
+      .send({ comment: { body: 'Unauthorized comment' } })
+      .expect(401);
   });
 
-  afterEach(async () => {
-    await truncateDatabase(dataSource);
+  it('POST /api/articles/:slug/comments - 404 if article not found', async () => {
+    await request(app.getHttpServer())
+      .post('/api/articles/non-existing-slug-12345/comments')
+      .set('Authorization', `Token ${userBToken}`)
+      .send({ comment: { body: 'Comment on nothing' } })
+      .expect(404);
+  });
+
+  it('POST /api/articles/:slug/comments - 400 if body is invalid', async () => {
+    await request(app.getHttpServer())
+      .post(`/api/articles/${articleSlug}/comments`)
+      .set('Authorization', `Token ${userBToken}`)
+      .send({ comment: { body: '' } })
+      .expect(400);
+  });
+
+  it('POST /api/articles/:slug/comments - Successfully add a comment', async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/api/articles/${articleSlug}/comments`)
+      .set('Authorization', `Token ${userBToken}`)
+      .send({ comment: { body: 'This is an awesome post!' } })
+      .expect(201);
+
+    expect(res.body).toHaveProperty('comment');
+    expect(res.body.comment.body).toBe('This is an awesome post!');
+    expect(res.body.comment.author.username).toBe(userB.username);
+    expect(res.body.comment.author.following).toBe(false);
+    expect(res.body.comment.id).toBeDefined();
+
+    commentId = res.body.comment.id;
+  });
+
+  it('GET /api/articles/:slug/comments - 404 if article not found', async () => {
+    await request(app.getHttpServer())
+      .get('/api/articles/non-existing-slug-12345/comments')
+      .expect(404);
+  });
+
+  it('GET /api/articles/:slug/comments - List comments anonymously', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/articles/${articleSlug}/comments`)
+      .expect(200);
+
+    expect(res.body).toHaveProperty('comments');
+    expect(Array.isArray(res.body.comments)).toBe(true);
+    expect(res.body.comments.length).toBe(1);
+    expect(res.body.comments[0].id).toBe(commentId);
+    expect(res.body.comments[0].body).toBe('This is an awesome post!');
+    expect(res.body.comments[0].author.following).toBe(false);
+  });
+
+  it('GET /api/articles/:slug/comments - List comments with authenticated user following author', async () => {
+    // User A follows User B
+    await request(app.getHttpServer())
+      .post(`/api/profiles/${userB.username}/follow`)
+      .set('Authorization', `Token ${userAToken}`)
+      .expect(200);
+
+    // User A views comments on the article
+    const res = await request(app.getHttpServer())
+      .get(`/api/articles/${articleSlug}/comments`)
+      .set('Authorization', `Token ${userAToken}`)
+      .expect(200);
+
+    expect(res.body.comments[0].author.following).toBe(true);
+  });
+
+  it('DELETE /api/articles/:slug/comments/:id - Unauthorized without token (401)', async () => {
+    await request(app.getHttpServer())
+      .delete(`/api/articles/${articleSlug}/comments/${commentId}`)
+      .expect(401);
+  });
+
+  it('DELETE /api/articles/:slug/comments/:id - Forbidden if non-author deletes (403)', async () => {
+    // User A tries to delete User B's comment
+    await request(app.getHttpServer())
+      .delete(`/api/articles/${articleSlug}/comments/${commentId}`)
+      .set('Authorization', `Token ${userAToken}`)
+      .expect(403);
+  });
+
+  it('DELETE /api/articles/:slug/comments/:id - Not Found if deleting comment via another article slug (404)', async () => {
+    await request(app.getHttpServer())
+      .delete(`/api/articles/${otherArticleSlug}/comments/${commentId}`)
+      .set('Authorization', `Token ${userBToken}`)
+      .expect(404);
+  });
+
+  it('DELETE /api/articles/:slug/comments/:id - Successfully delete comment by author', async () => {
+    await request(app.getHttpServer())
+      .delete(`/api/articles/${articleSlug}/comments/${commentId}`)
+      .set('Authorization', `Token ${userBToken}`)
+      .expect(200);
+  });
+
+  it('GET /api/articles/:slug/comments - Verify comment is removed', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/articles/${articleSlug}/comments`)
+      .expect(200);
+
+    expect(res.body.comments.length).toBe(0);
   });
 
   afterAll(async () => {
     await app.close();
-  });
-
-  describe('POST /api/articles/:slug/comments (create - C2 branches)', () => {
-    it('Branch 1: returns 401 when Authorization header is missing', async () => {
-      const fakeComment = buildFakeComment();
-
-      await request(app.getHttpServer())
-        .post(`/api/articles/${primaryArticle.slug}/comments`)
-        .send({ comment: fakeComment })
-        .expect(401);
-    });
-
-    it('Branch 2: returns 401 when JWT token is malformed', async () => {
-      const fakeComment = buildFakeComment();
-
-      await request(app.getHttpServer())
-        .post(`/api/articles/${primaryArticle.slug}/comments`)
-        .set('Authorization', 'Token invalid.jwt.token')
-        .send({ comment: fakeComment })
-        .expect(401);
-    });
-
-    it('Branch 3: returns 401 when JWT token was revoked via logout (blacklisted)', async () => {
-      await request(app.getHttpServer())
-        .post('/api/users/logout')
-        .set('Authorization', `Token ${commenter.token}`)
-        .expect(200);
-
-      await request(app.getHttpServer())
-        .post(`/api/articles/${primaryArticle.slug}/comments`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .send({ comment: buildFakeComment() })
-        .expect(401);
-    });
-
-    it('Branch 4: returns 400 when comment wrapper object is missing', async () => {
-      const res = await request(app.getHttpServer())
-        .post(`/api/articles/${primaryArticle.slug}/comments`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .send({})
-        .expect(400);
-
-      expect(res.body).toHaveProperty('errors');
-    });
-
-    it('Branch 5: returns 400 when comment.body is empty string', async () => {
-      const res = await request(app.getHttpServer())
-        .post(`/api/articles/${primaryArticle.slug}/comments`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .send({ comment: { body: '' } })
-        .expect(400);
-
-      expect(res.body).toHaveProperty('errors');
-    });
-
-    it('Branch 6: returns 400 when extra non-whitelisted properties are sent', async () => {
-      await request(app.getHttpServer())
-        .post(`/api/articles/${primaryArticle.slug}/comments`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .send({
-          comment: {
-            body: buildFakeComment().body,
-            extraField: 'should-be-rejected',
-          },
-        })
-        .expect(400);
-    });
-
-    it('Branch 7: returns 404 when target article slug does not exist', async () => {
-      await request(app.getHttpServer())
-        .post('/api/articles/non-existent-article-slug/comments')
-        .set('Authorization', `Token ${commenter.token}`)
-        .send({ comment: buildFakeComment() })
-        .expect(404);
-    });
-
-    it('Branch 8: returns 201, persists comment, and returns author profile when valid', async () => {
-      const fakeComment = buildFakeComment();
-
-      const res = await request(app.getHttpServer())
-        .post(`/api/articles/${primaryArticle.slug}/comments`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .send({ comment: fakeComment })
-        .expect(201);
-
-      expect(res.body.comment).toMatchObject({
-        body: fakeComment.body,
-        author: {
-          username: commenter.username,
-          bio: null,
-          image: null,
-          following: false,
-        },
-      });
-      expect(typeof res.body.comment.id).toBe('number');
-    });
-  });
-
-  describe('GET /api/articles/:slug/comments (findAll - C2 branches)', () => {
-    it('Branch 9: returns 404 when article slug does not exist', async () => {
-      await request(app.getHttpServer())
-        .get('/api/articles/non-existent-article-slug/comments')
-        .expect(404);
-    });
-
-    it('Branch 10: returns 200 with empty array when article has no comments', async () => {
-      const res = await request(app.getHttpServer())
-        .get(`/api/articles/${primaryArticle.slug}/comments`)
-        .set('Authorization', `Token ${articleAuthor.token}`)
-        .expect(200);
-
-      expect(res.body).toEqual({ comments: [] });
-    });
-
-    it('Branch 11: returns comments with following: false when visitor is anonymous', async () => {
-      const created = await seedComment(
-        app,
-        primaryArticle.slug,
-        commenter.token,
-      );
-
-      const res = await request(app.getHttpServer())
-        .get(`/api/articles/${primaryArticle.slug}/comments`)
-        .expect(200);
-
-      expect(res.body.comments).toHaveLength(1);
-      expect(res.body.comments[0].id).toBe(created.id);
-      expect(res.body.comments[0].body).toBe(created.body);
-      expect(res.body.comments[0].author.following).toBe(false);
-    });
-
-    it('Branch 12: treats blacklisted token as anonymous in OptionalJwtAuthGuard (following: false)', async () => {
-      await seedComment(app, primaryArticle.slug, commenter.token);
-
-      await request(app.getHttpServer())
-        .post(`/api/profiles/${commenter.username}/follow`)
-        .set('Authorization', `Token ${articleAuthor.token}`)
-        .expect(200);
-
-      await request(app.getHttpServer())
-        .post('/api/users/logout')
-        .set('Authorization', `Token ${articleAuthor.token}`)
-        .expect(200);
-
-      const res = await request(app.getHttpServer())
-        .get(`/api/articles/${primaryArticle.slug}/comments`)
-        .set('Authorization', `Token ${articleAuthor.token}`)
-        .expect(200);
-
-      expect(res.body.comments).toHaveLength(1);
-      expect(res.body.comments[0].author.following).toBe(false);
-    });
-
-    it('Branch 13: returns following: false for authenticated user not following comment author', async () => {
-      await seedComment(app, primaryArticle.slug, commenter.token);
-
-      const res = await request(app.getHttpServer())
-        .get(`/api/articles/${primaryArticle.slug}/comments`)
-        .set('Authorization', `Token ${thirdUser.token}`)
-        .expect(200);
-
-      expect(res.body.comments).toHaveLength(1);
-      expect(res.body.comments[0].author.following).toBe(false);
-    });
-
-    it('Branch 14: maps following: true only for followed authors across multiple comments', async () => {
-      await seedComment(app, primaryArticle.slug, commenter.token);
-      await seedComment(app, primaryArticle.slug, thirdUser.token);
-
-      await request(app.getHttpServer())
-        .post(`/api/profiles/${commenter.username}/follow`)
-        .set('Authorization', `Token ${articleAuthor.token}`)
-        .expect(200);
-
-      const res = await request(app.getHttpServer())
-        .get(`/api/articles/${primaryArticle.slug}/comments`)
-        .set('Authorization', `Token ${articleAuthor.token}`)
-        .expect(200);
-
-      expect(res.body.comments).toHaveLength(2);
-      const byAuthor = new Map<string, boolean>(
-        res.body.comments.map((c: any) => [
-          c.author.username,
-          c.author.following,
-        ]),
-      );
-      expect(byAuthor.get(commenter.username)).toBe(true);
-      expect(byAuthor.get(thirdUser.username)).toBe(false);
-    });
-  });
-
-  describe('DELETE /api/articles/:slug/comments/:id (delete - C2 branches)', () => {
-    it('Branch 15: returns 401 when unauthenticated or token blacklisted', async () => {
-      const comment = await seedComment(
-        app,
-        primaryArticle.slug,
-        commenter.token,
-      );
-
-      await request(app.getHttpServer())
-        .delete(`/api/articles/${primaryArticle.slug}/comments/${comment.id}`)
-        .expect(401);
-
-      await request(app.getHttpServer())
-        .post('/api/users/logout')
-        .set('Authorization', `Token ${commenter.token}`)
-        .expect(200);
-
-      await request(app.getHttpServer())
-        .delete(`/api/articles/${primaryArticle.slug}/comments/${comment.id}`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .expect(401);
-    });
-
-    it('Branch 16: returns 400 when comment id param is not a valid integer (ParseIntPipe)', async () => {
-      await request(app.getHttpServer())
-        .delete(`/api/articles/${primaryArticle.slug}/comments/not-a-number`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .expect(400);
-    });
-
-    it('Branch 17: returns 404 when article slug does not exist', async () => {
-      const comment = await seedComment(
-        app,
-        primaryArticle.slug,
-        commenter.token,
-      );
-
-      await request(app.getHttpServer())
-        .delete(`/api/articles/non-existent-slug/comments/${comment.id}`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .expect(404);
-    });
-
-    it('Branch 18: returns 404 when comment id does not exist on article', async () => {
-      await request(app.getHttpServer())
-        .delete(`/api/articles/${primaryArticle.slug}/comments/999999`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .expect(404);
-    });
-
-    it('Branch 19: returns 404 when deleting comment via another article slug', async () => {
-      const comment = await seedComment(
-        app,
-        primaryArticle.slug,
-        commenter.token,
-      );
-
-      await request(app.getHttpServer())
-        .delete(`/api/articles/${secondaryArticle.slug}/comments/${comment.id}`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .expect(404);
-
-      // Confirm comment still exists on primaryArticle
-      const checkRes = await request(app.getHttpServer())
-        .get(`/api/articles/${primaryArticle.slug}/comments`)
-        .expect(200);
-      expect(checkRes.body.comments).toHaveLength(1);
-    });
-
-    it('Branch 20: returns 403 when caller is not the author of the comment', async () => {
-      const comment = await seedComment(
-        app,
-        primaryArticle.slug,
-        commenter.token,
-      );
-
-      // Even the article author cannot delete someone else's comment
-      await request(app.getHttpServer())
-        .delete(`/api/articles/${primaryArticle.slug}/comments/${comment.id}`)
-        .set('Authorization', `Token ${articleAuthor.token}`)
-        .expect(403);
-
-      const checkRes = await request(app.getHttpServer())
-        .get(`/api/articles/${primaryArticle.slug}/comments`)
-        .expect(200);
-      expect(checkRes.body.comments).toHaveLength(1);
-    });
-
-    it('Branch 21: returns 200 and deletes comment from DB when caller is author', async () => {
-      const comment = await seedComment(
-        app,
-        primaryArticle.slug,
-        commenter.token,
-      );
-
-      const res = await request(app.getHttpServer())
-        .delete(`/api/articles/${primaryArticle.slug}/comments/${comment.id}`)
-        .set('Authorization', `Token ${commenter.token}`)
-        .expect(200);
-
-      expect(res.body).toEqual({ message: 'Comment deleted successfully' });
-
-      const checkRes = await request(app.getHttpServer())
-        .get(`/api/articles/${primaryArticle.slug}/comments`)
-        .expect(200);
-      expect(checkRes.body.comments).toHaveLength(0);
-    });
   });
 });

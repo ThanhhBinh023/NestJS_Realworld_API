@@ -46,7 +46,7 @@ function getI18nPath(): string {
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: process.env.NODE_ENV === 'test' ? '.env.test' : '.env',
+      envFilePath: '.env',
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -57,12 +57,7 @@ function getI18nPath(): string {
         port: parseInt(configService.get<string>('DB_PORT', '3306'), 10),
         username: configService.get<string>('DB_USERNAME', 'root'),
         password: configService.get<string>('DB_PASSWORD', '123456'),
-        database: configService.get<string>(
-          'DB_NAME',
-          process.env.NODE_ENV === 'test'
-            ? 'realworld_nest_test'
-            : 'realworld_nest',
-        ),
+        database: configService.get<string>('DB_NAME', 'realworld_nest'),
         entities: [User, Follow, Article, Tag, Favorite, Comment, Attachment],
         synchronize: false,
         logging: false,
